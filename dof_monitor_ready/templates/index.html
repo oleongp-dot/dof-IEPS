@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOF Monitor — Panel Informativo</title>
+    <!-- Plotly.js CDN -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #21262d;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 24px;
+            color: #f0f6fc;
+            margin: 0;
+        }
+        .btn-refresh {
+            background-color: #238636;
+            color: white;
+            border: 1px solid rgba(240,246,252,0.1);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .btn-refresh:hover {
+            background-color: #2ea44f;
+        }
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .card {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 16px;
+        }
+        .card-title {
+            font-size: 14px;
+            color: #8b949e;
+            margin-bottom: 8px;
+        }
+        .card-value {
+            font-size: 22px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+        .card-sub {
+            font-size: 12px;
+            margin-top: 6px;
+        }
+        .sube { color: #58a6ff; }
+        .baja { color: #ff7b72; }
+        .neutral { color: #8b949e; }
+        #grafica-plotly {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            overflow: hidden;
+            min-height: 600px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 18px;
+            color: #8b949e;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 DOF Monitor</h1>
+            <div>
+                <span id="txt-cache" style="font-size:12px; color:#8b949e; margin-right:10px;"></span>
+                <button class="btn-refresh" onclick="cargarDatos(true)">Actualizar</button>
+            </div>
+        </header>
+
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-title">💱 Tipo de Cambio</div>
+                <div id="tc-valor" class="card-value">--</div>
+                <div id="tc-var" class="card-sub">--</div>
+            </div>
+            <div class="card">
+                <div class="card-title">⛽ Magna</div>
+                <div id="magna-valor" class="card-value">--</div>
+                <div id="magna-var" class="card-sub">--</div>
+            </div>
+            <div class="card">
+                <div class="card-title">⛽ Premium</div>
+                <div id="premium-valor" class="card-value">--</div>
+                <div id="premium-var" class="card-sub">--</div>
+            </div>
+            <div class="card">
+                <div class="card-title">⛽ Diésel</div>
+                <div id="diesel-valor" class="card-value">--</div>
+                <div id="diesel-var" class="card-sub">--</div>
+            </div>
+        </div>
+
+        <div id="status" class="loading">Cargando monitor de datos e indicadores...</div>
+        <div id="grafica-plotly"></div>
+    </div>
+
+    <script>
+        function actualizarTarjeta(idValor, idVar, objeto) {
+            if (!objeto) return;
+            document.getElementById(idValor).innerText = '$' + objeto.valor.toFixed(4);
+            const varEl = document.getElementById(idVar);
+            varEl.innerText = objeto.variacion.texto;
+            varEl.className = 'card-sub ' + objeto.variacion.tipo;
+        }
+
+        function cargarDatos(force = false) {
+            const statusEl = document.getElementById('status');
+            statusEl.style.display = 'block';
+            statusEl.innerText = 'Consultando información del Diario Oficial de la Federación...';
+            
+            let url = '/api/consultar';
+            if (force) url += '?force=true';
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    statusEl.style.display = 'none';
+                    
+                    // Actualizar indicadores
+                    if (data.tipo_cambio) {
+                        actualizarTarjeta('tc-valor', 'tc-var', data.tipo_cambio);
+                    }
+                    if (data.ieps) {
+                        actualizarTarjeta('magna-valor', 'magna-var', data.ieps.magna);
+                        actualizarTarjeta('premium-valor', 'premium-var', data.ieps.premium);
+                        actualizarTarjeta('diesel-valor', 'diesel-var', data.ieps.diesel);
+                    }
+
+                    document.getElementById('txt-cache').innerText = 
+                        (data.desde_cache ? 'Caché activo' : 'Datos frescos') + ' (' + data.fecha_consulta + ')';
+
+                    // Renderizar Gráfica Interactiva
+                    if (data.grafica) {
+                        const datosGrafica = JSON.parse(data.grafica);
+                        Plotly.newPlot('grafica-plotly', datosGrafica.data, datosGrafica.layout, {responsive: true, displayModeBar: false});
+                    }
+                })
+                .catch(err => {
+                    statusEl.innerText = 'Error al cargar los datos del monitor.';
+                    console.error(err);
+                });
+        }
+
+        // Carga inicial al abrir la página
+        window.onload = () => cargarDatos(false);
+    </script>
+</body>
+</html>
