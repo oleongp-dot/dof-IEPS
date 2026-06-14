@@ -155,7 +155,7 @@ def generar_grafica_base64(data):
         return datetime.datetime.strptime(f, "%d/%m/%Y")
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(13, 8), facecolor="#0D1117")
-    fig.suptitle("DOF Monitor — Histórico 30 días", fontsize=15, fontweight="bold", color="#E6EDF3", y=0.98)
+    fig.suptitle("DOF Monitor — Histórico 7 días", fontsize=15, fontweight="bold", color="#E6EDF3", y=0.98)
 
     for ax in [ax1, ax2]:
         ax.set_facecolor("#161B22")
@@ -207,7 +207,7 @@ def run_scraper():
     }
 
     hoy = datetime.datetime.now()
-    for i in range(30, -1, -1):
+    for i in range(7, -1, -1):
         fecha = hoy - datetime.timedelta(days=i)
         buscar_dia(fecha, data)
         time.sleep(0.3)
