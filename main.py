@@ -109,7 +109,6 @@ def extraer_ieps(url, fecha_str):
 def extraer_tipo_cambio(url, fecha_str):
     try:
         respuesta = requests.get(url, headers=headers, verify=False, timeout=8)
-        # LÍNEA CORREGIDA: Inicialización limpia de BeautifulSoup
         soup = BeautifulSoup(respuesta.text, "html.parser")
         texto = soup.get_text()
 
@@ -231,95 +230,47 @@ def generar_grafica_json(datos):
     if not puntos_tc and not puntos_ieps:
         return None
 
+    # Título limpio del Tipo de Cambio aplicado aquí
     fig = make_subplots(
         rows=2, cols=1,
         shared_xaxes=False,
-        vertical_spacing=0.12,
+        vertical_spacing=0.15,
         subplot_titles=("💱 Tipo de Cambio USD/MXN", "⛽ IEPS Combustibles (Pesos/Litro)")
     )
 
-    font_labels = dict(size=10, color="#E6EDF3", family="Segoe UI", weight="bold")
-
-    # --- 1. CONFIGURACIÓN GRÁFICA TIPO DE CAMBIO ---
     if puntos_tc:
         fx_tc = [p[0].strftime("%Y-%m-%d") for p in puntos_tc]
         vy_tc = [p[1] for p in puntos_tc]
         
-        textos_tc = [""] * len(vy_tc)
-        if textos_tc:
-            textos_tc[-1] = f"${vy_tc[-1]:.4f}"
-
         fig.add_trace(
             gr.Scatter(
                 x=fx_tc, y=vy_tc,
-                mode='lines+markers+text',
+                mode='lines+markers',
                 name='USD/MXN',
-                text=textos_tc,
-                textposition="top center",
-                textfont=font_labels,
-                line=dict(color='#58A6FF', width=2),
-                marker=dict(size=5),
+                line=dict(color='#58A6FF', width=2.5),
+                marker=dict(size=6),
                 fill='tozeroy',
-                fillcolor='rgba(88, 166, 255, 0.01)'
+                fillcolor='rgba(88, 166, 255, 0.02)'
             ),
             row=1, col=1
         )
 
-    # --- 2. CONFIGURACIÓN GRÁFICA IEPS ---
     if puntos_ieps:
         fx_ieps = [p[0].strftime("%Y-%m-%d") for p in puntos_ieps]
         vy_regular = [p[1] for p in puntos_ieps]
         vy_premium = [p[2] for p in puntos_ieps]
         vy_diesel = [p[3] for p in puntos_ieps]
         
-        textos_reg = [""] * len(vy_regular)
-        textos_prem = [""] * len(vy_premium)
-        textos_die = [""] * len(vy_diesel)
-        
-        if textos_reg: textos_reg[-1] = f"${vy_regular[-1]:.4f}"
-        if textos_prem: textos_prem[-1] = f"${vy_premium[-1]:.4f}"
-        if textos_die: textos_die[-1] = f"${vy_diesel[-1]:.4f}"
-        
-        # Regular (Verde)
         fig.add_trace(
-            gr.Scatter(
-                x=fx_ieps, y=vy_regular, 
-                mode='lines+markers+text', 
-                name='Regular (<91 oct)', 
-                text=textos_reg,
-                textposition="top center",
-                textfont=font_labels,
-                line=dict(color='#3FB950', width=2), 
-                marker=dict(size=5)
-            ),
+            gr.Scatter(x=fx_ieps, y=vy_regular, mode='lines+markers', name='Regular (<91 oct)', line=dict(color='#3FB950', width=2.5), marker=dict(size=6)),
             row=2, col=1
         )
-        # Premium (Rojo)
         fig.add_trace(
-            gr.Scatter(
-                x=fx_ieps, y=vy_premium, 
-                mode='lines+markers+text', 
-                name='Premium (≥91 oct)', 
-                text=textos_prem,
-                textposition="bottom center", 
-                textfont=font_labels,
-                line=dict(color='#FF7B72', width=2), 
-                marker=dict(size=5)
-            ),
+            gr.Scatter(x=fx_ieps, y=vy_premium, mode='lines+markers', name='Premium (≥91 oct)', line=dict(color='#FF7B72', width=2.5), marker=dict(size=6)),
             row=2, col=1
         )
-        # Diesel (Blanco)
         fig.add_trace(
-            gr.Scatter(
-                x=fx_ieps, y=vy_diesel, 
-                mode='lines+markers+text', 
-                name='Diésel', 
-                text=textos_die,
-                textposition="top center",
-                textfont=font_labels,
-                line=dict(color='#FFFFFF', width=2), 
-                marker=dict(size=5)
-            ),
+            gr.Scatter(x=fx_ieps, y=vy_diesel, mode='lines+markers', name='Diésel', line=dict(color='#FFFFFF', width=2.5), marker=dict(size=6)),
             row=2, col=1
         )
 
@@ -327,16 +278,16 @@ def generar_grafica_json(datos):
         font=dict(color="#E6EDF3", family="Segoe UI, sans-serif"),
         paper_bgcolor="#0D1117",
         plot_bgcolor="#161B22",
-        height=720, 
+        height=700,
         showlegend=True,
         legend=dict(bgcolor="#21262D", bordercolor="#30363D", font=dict(size=10)),
-        margin=dict(l=60, r=60, t=40, b=40)
+        margin=dict(l=60, r=40, t=50, b=50)
     )
 
     fig.update_xaxes(
         type='category',
         showgrid=True,
-        gridcolor='rgba(139, 148, 158, 0.05)',
+        gridcolor='rgba(139, 148, 158, 0.08)',
         tickfont=dict(size=9, color="#8B949E"),
         linecolor="#30363D",
         tickangle=-45
@@ -344,15 +295,41 @@ def generar_grafica_json(datos):
 
     if puntos_tc:
         valores = [p[1] for p in puntos_tc]
-        min_val, max_val = min(valores), max(valores)
-        margen = max((max_val - min_val) * 0.1, 0.02)
-        fig.update_yaxes(title_text="Pesos por dólar", row=1, col=1, autorange=False, range=[min_val - margen, max_val + margen], gridcolor='rgba(139, 148, 158, 0.05)', tickfont=dict(size=10, color="#8B949E"), linecolor="#30363D", tickformat=".4f")
+        min_val = min(valores)
+        max_val = max(valores)
+        margen = max((max_val - min_val) * 0.05, 0.005)
+        
+        fig.update_yaxes(
+            title_text="Pesos por dólar",
+            row=1, col=1,
+            autorange=False, 
+            range=[min_val - margen, max_val + margen],
+            showgrid=True,
+            gridcolor='rgba(139, 148, 158, 0.08)',
+            tickfont=dict(size=10, color="#8B949E"),
+            linecolor="#30363D",
+            tickformat=".4f"
+        )
 
     if puntos_ieps:
-        todos_ieps = vy_regular + vy_premium + vy_diesel
-        min_ieps, max_ieps = min(todos_ieps), max(todos_ieps)
-        margen_ieps = max((max_ieps - min_ieps) * 0.1, 0.2)
-        fig.update_yaxes(title_text="Pesos por litro", row=2, col=1, autorange=False, range=[min_ieps - margen_ieps, max_ieps + margen_ieps], gridcolor='rgba(139, 148, 158, 0.05)', tickfont=dict(size=10, color="#8B949E"), linecolor="#30363D", tickformat=".4f")
+        todos_ieps = []
+        for p in puntos_ieps:
+            todos_ieps.extend([p[1], p[2], p[3]])
+        min_ieps = min(todos_ieps)
+        max_ieps = max(todos_ieps)
+        margen_ieps = max((max_ieps - min_ieps) * 0.05, 0.05)
+        
+        fig.update_yaxes(
+            title_text="Pesos por litro",
+            row=2, col=1,
+            autorange=False,
+            range=[min_ieps - margen_ieps, max_ieps + margen_ieps],
+            showgrid=True,
+            gridcolor='rgba(139, 148, 158, 0.08)',
+            tickfont=dict(size=10, color="#8B949E"),
+            linecolor="#30363D",
+            tickformat=".4f"
+        )
 
     return fig.to_json()
 
@@ -363,6 +340,7 @@ def generar_grafica_json(datos):
 def run_scraper():
     hoy = datetime.datetime.now()
     resultados_dias = []
+    
     dias_a_revisar = [hoy - datetime.timedelta(days=i) for i in range(38)]
     
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -415,6 +393,7 @@ def run_scraper():
 
 def construir_respuesta(datos, desde_cache=False):
     grafica_json = generar_grafica_json(datos)
+
     resultado = {
         "fecha_consulta": datos["fecha_consulta"],
         "tipo_cambio": None,
@@ -422,13 +401,38 @@ def construir_respuesta(datos, desde_cache=False):
         "grafica": grafica_json,
         "desde_cache": desde_cache,
     }
+
     if datos["valores_tc"]:
-        resultado["tipo_cambio"] = {"valor": datos["valores_tc"][-1], "fecha": datos["ultima_fecha_tc"], "variacion": calcular_variacion(datos["valores_tc"])}
+        resultado["tipo_cambio"] = {
+            "valor": datos["valores_tc"][-1],
+            "fecha": datos["ultima_fecha_tc"],
+            "variacion": calcular_variacion(datos["valores_tc"]),
+        }
+
     if datos["vals_regular"]:
-        resultado["ieps"] = {"vigencia": datos["ultima_vigencia"], "regular": {"valor": datos["vals_regular"][-1], "variacion": calcular_variacion(datos["vals_regular"])}, "premium": {"valor": datos["vals_premium"][-1], "variacion": calcular_variacion(datos["vals_premium"])}, "diesel": {"valor": datos["vals_diesel"][-1], "variacion": calcular_variacion(datos["vals_diesel"])}}
+        resultado["ieps"] = {
+            "vigencia": datos["ultima_vigencia"],
+            "regular": {
+                "valor": datos["vals_regular"][-1],
+                "variacion": calcular_variacion(datos["vals_regular"]),
+            },
+            "premium": {
+                "vals_premium": datos["vals_premium"],
+                "valor": datos["vals_premium"][-1],
+                "variacion": calcular_variacion(datos["vals_premium"]),
+            },
+            "diesel": {
+                "valor": datos["vals_diesel"][-1],
+                "variacion": calcular_variacion(datos["vals_diesel"]),
+            },
+        }
+
     return resultado
 
 
+# ==========================================
+# ENDPOINTS API FastAPI
+# ==========================================
 @app.get("/", response_class=HTMLResponse)
 async def index():
     try:
@@ -444,6 +448,9 @@ async def consultar(force: bool = False):
         datos = obtener_cache()
         resultado = await run_in_threadpool(construir_respuesta, datos, True)
         return JSONResponse(content=resultado)
+
     datos = await run_in_threadpool(run_scraper)
     resultado = await run_in_threadpool(construir_respuesta, datos, False)
     return JSONResponse(content=resultado)
+
+
