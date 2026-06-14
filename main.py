@@ -234,7 +234,7 @@ def generar_grafica_json(datos):
         rows=2, cols=1,
         shared_xaxes=False,
         vertical_spacing=0.15,
-        subplot_titles=("💱 Tipo de Cambio USD/MXN", "⛽ IEPS Combustibles (pesos/litro)")
+        subplot_titles=("💱 Tipo de Cambio USD/MXN (Detalle de Volatilidad)", "⛽ IEPS Combustibles (pesos/litro)")
     )
 
     if puntos_tc:
@@ -249,7 +249,7 @@ def generar_grafica_json(datos):
                 line=dict(color='#58A6FF', width=2.5),
                 marker=dict(size=7),
                 fill='tozeroy',
-                fillcolor='rgba(88, 166, 255, 0.06)'
+                fillcolor='rgba(88, 166, 255, 0.02)'
             ),
             row=1, col=1
         )
@@ -277,13 +277,12 @@ def generar_grafica_json(datos):
         font=dict(color="#E6EDF3", family="Segoe UI, sans-serif"),
         paper_bgcolor="#0D1117",
         plot_bgcolor="#161B22",
-        height=600,
+        height=650,
         showlegend=True,
         legend=dict(bgcolor="#21262D", bordercolor="#30363D", font=dict(size=10)),
         margin=dict(l=60, r=40, t=50, b=50)
     )
 
-    # Configuración estricta de ejes X
     fig.update_xaxes(
         type='category',
         showgrid=True,
@@ -292,33 +291,53 @@ def generar_grafica_json(datos):
         linecolor="#30363D"
     )
 
-    # Gráfica 1 (Tipo de Cambio): Activar autorange independiente para evitar línea plana
-    fig.update_yaxes(
-        title_text="Pesos por dólar",
-        row=1, col=1,
-        autorange=True,
-        showgrid=True,
-        gridcolor='rgba(139, 148, 158, 0.08)',
-        tickfont=dict(size=10, color="#8B949E"),
-        linecolor="#30363D"
-    )
+    # ========================================================
+    # CÁLCULO DE LÍMITES AJUSTADOS PARA MAXIMIZAR VOLATILIDAD
+    # ========================================================
+    if puntos_tc:
+        valores = [p[1] for p in puntos_tc]
+        min_val = min(valores)
+        max_val = max(valores)
+        # Margen mínimo del 5% del rango o 0.005 pesos
+        margen = max((max_val - min_val) * 0.05, 0.005)
+        
+        fig.update_yaxes(
+            title_text="Pesos por dólar",
+            row=1, col=1,
+            autorange=False, 
+            range=[min_val - margen, max_val + margen],
+            showgrid=True,
+            gridcolor='rgba(139, 148, 158, 0.08)',
+            tickfont=dict(size=10, color="#8B949E"),
+            linecolor="#30363D",
+            tickformat=".4f"
+        )
 
-    # Gráfica 2 (IEPS): Activar autorange independiente
-    fig.update_yaxes(
-        title_text="Pesos por litro",
-        row=2, col=1,
-        autorange=True,
-        showgrid=True,
-        gridcolor='rgba(139, 148, 158, 0.08)',
-        tickfont=dict(size=10, color="#8B949E"),
-        linecolor="#30363D"
-    )
+    if puntos_ieps:
+        todos_ieps = []
+        for p in puntos_ieps:
+            todos_ieps.extend([p[1], p[2], p[3]])
+        min_ieps = min(todos_ieps)
+        max_ieps = max(todos_ieps)
+        margen_ieps = max((max_ieps - min_ieps) * 0.05, 0.05)
+        
+        fig.update_yaxes(
+            title_text="Pesos por litro",
+            row=2, col=1,
+            autorange=False,
+            range=[min_ieps - margen_ieps, max_ieps + margen_ieps],
+            showgrid=True,
+            gridcolor='rgba(139, 148, 158, 0.08)',
+            tickfont=dict(size=10, color="#8B949E"),
+            linecolor="#30363D",
+            tickformat=".4f"
+        )
 
     return fig.to_json()
 
 
 # ==========================================
-# MOTOR DEL SCRAPER (HISTÓRICO)
+# MOTOR DEL SCRAPER (HISTÓRICO 12 DÍAS)
 # ==========================================
 def run_scraper():
     hoy = datetime.datetime.now()
