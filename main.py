@@ -230,12 +230,12 @@ def generar_grafica_json(datos):
     if not puntos_tc and not puntos_ieps:
         return None
 
-    # Se removió la especificación del periodo del título de la segunda gráfica
+    # Título limpio del Tipo de Cambio aplicado aquí
     fig = make_subplots(
         rows=2, cols=1,
         shared_xaxes=False,
         vertical_spacing=0.15,
-        subplot_titles=("💱 Tipo de Cambio USD/MXN (Detalle de Volatilidad)", "⛽ IEPS Combustibles (Pesos/Litro)")
+        subplot_titles=("💱 Tipo de Cambio USD/MXN", "⛽ IEPS Combustibles (Pesos/Litro)")
     )
 
     if puntos_tc:
@@ -335,16 +335,14 @@ def generar_grafica_json(datos):
 
 
 # ==========================================
-# MOTOR DEL SCRAPER (RANGO AMPLIADO DE SEGURIDAD)
+# MOTOR DEL SCRAPER (HISTÓRICO 38 DÍAS)
 # ==========================================
 def run_scraper():
     hoy = datetime.datetime.now()
     resultados_dias = []
     
-    # Ampliado a 38 días de historial para asegurar al menos 5 o 6 semanas consecutivas de publicaciones de viernes
     dias_a_revisar = [hoy - datetime.timedelta(days=i) for i in range(38)]
     
-    # Mantenemos 5 workers para resolver la carga de manera eficiente y asíncrona
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(buscar_dia, fecha): fecha for fecha in dias_a_revisar}
         for future in as_completed(futures):
