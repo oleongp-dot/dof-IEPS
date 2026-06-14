@@ -6,7 +6,7 @@
     <title>DOF Monitor</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         body {
             background-color: #0D1117;
@@ -35,8 +35,8 @@
                     <p class="text-xs text-[#8B949E]" id="fecha-consulta">Cargando estado del sistema...</p>
                 </div>
             </div>
-            <div class="flex gap-2 data-html2canvas-ignore="true"">
-                <button id="btn-descargar" onclick="capturarPantallaCompleta()" class="bg-[#21262D] hover:bg-[#30363D] text-[#C9D1D9] border border-[#30363D] font-medium text-sm px-4 py-2 rounded transition-colors duration-200 cursor-pointer flex items-center gap-2">
+            <div class="flex gap-2">
+                <button id="btn-descargar" onclick="generarCapturaSegura()" class="bg-[#21262D] hover:bg-[#30363D] text-[#C9D1D9] border border-[#30363D] font-medium text-sm px-4 py-2 rounded transition-colors duration-200 cursor-pointer flex items-center gap-2">
                     📸 Descargar Reporte
                 </button>
                 <button id="btn-actualizar" onclick="consultarAPI(true)" class="bg-[#238636] hover:bg-[#2EA043] text-white font-medium text-sm px-4 py-2 rounded transition-colors duration-200 cursor-pointer">
@@ -87,7 +87,7 @@
             </div>
         </div>
 
-        <main class="card p-4 min-h-[400px] flex flex-col justify-center relative">
+        <main id="bloque-grafica" class="card p-4 min-h-[400px] flex flex-col justify-center relative">
             <div id="loading-overlay" class="absolute inset-0 bg-[#0D1117]/80 flex flex-col items-center justify-center gap-3 z-10 rounded">
                 <div class="animate-spin rounded-full h-10 w-10 border-4 border-[#30363D] border-t-[#58A6FF]"></div>
                 <p class="text-sm text-[#8B949E]" id="loading-text">Consultando información del Diario Oficial de la Federación...</p>
@@ -180,50 +180,81 @@
         }
 
         // =============================================================
-        // FUNCIÓN DE CAPTURA PANORÁMICA COMPLETA (DATOS + GRÁFICAS)
+        // ESTRATEGIA DE CAPTURA BLINDADA (PLOTLY NATIVO + HTML2CANVAS)
         // =============================================================
-        function capturarPantallaCompleta() {
-            const nodo = document.getElementById('area-reporte');
+        function generarCapturaSegura() {
             const btnDescargar = document.getElementById('btn-descargar');
             const btnActualizar = document.getElementById('btn-actualizar');
-            
-            btnDescargar.innerText = "📸 Capturando...";
+            const nodeGrafica = document.getElementById('contenedor-grafica');
+            const bloqueGrafica = document.getElementById('bloque-grafica');
+
+            if (!nodeGrafica || !nodeGrafica.data) {
+                alert("Espera a que carguen las gráficas completamente.");
+                return;
+            }
+
+            btnDescargar.innerText = "📸 Procesando...";
             btnDescargar.disabled = true;
 
-            // Ocultamos temporalmente los botones de la foto para que se vea un reporte profesional
-            btnDescargar.style.visibility = 'hidden';
-            btnActualizar.style.visibility = 'hidden';
-
-            // Opciones de renderizado de alta calidad para dom-to-image
-            const opciones = {
-                style: {
-                    'transform': 'scale(1)',
-                    'transform-origin': 'top left'
-                },
-                bgcolor: '#0D1117'
-            };
-
-            domtoimage.toPng(nodo, opciones)
+            // Paso 1: Usamos la API de Plotly para tomar una "foto estática" perfecta de la gráfica en memoria
+            Plotly.toImage(nodeGrafica, { format: 'png', height: 700, width: 1100, scale: 2 })
                 .then(function (dataUrl) {
-                    const enlace = document.createElement('a');
-                    const hoy = new Date().toISOString().slice(0,10);
-                    enlace.download = `DOF_Monitor_Completo_${hoy}.png`;
-                    enlace.href = dataUrl;
-                    enlace.click();
+                    // Creación de una imagen temporal estándar para sustituir el objeto dinámico problemático
+                    const imgTemporal = document.createElement('img');
+                    imgTemporal.src = dataUrl;
+                    imgTemporal.className = "w-full h-auto";
+
+                    // Almacenamos el div dinámico original de Plotly para restaurarlo después
+                    const backupPlotly = nodeGrafica;
                     
-                    // Restauramos los controles
-                    btnDescargar.style.visibility = 'visible';
-                    btnActualizar.style.visibility = 'visible';
-                    btnDescargar.innerText = "📸 Descargar Reporte";
-                    btnDescargar.disabled = false;
+                    // Reemplazamos temporalmente el bloque interactivo por la imagen fija limpia
+                    bloqueGrafica.innerHTML = '';
+                    bloqueGrafica.appendChild(imgTemporal);
+
+                    // Escondemos los botones para que no aparezcan en tu infografía final
+                    btnDescargar.style.visibility = 'hidden';
+                    btnActualizar.style.visibility = 'hidden';
+
+                    // Paso 2: Ejecutamos html2canvas sobre todo el layout. Al ser puro HTML con una imagen fija, es 100% inmune a errores.
+                    html2canvas(document.getElementById('area-reporte'), {
+                        backgroundColor: '#0D1117',
+                        scale: 2,
+                        logging: false
+                    }).then(canvas => {
+                        const link = document.createElement('a');
+                        const hoy = new Date().toISOString().slice(0, 10);
+                        link.download = `DOF_Monitor_Reporte_${hoy}.png`;
+                        link.href = canvas.toDataURL('image/png');
+                        link.click();
+
+                        // Paso 3: Reconstrucción e inyección del estado dinámico original
+                        bloqueGrafica.innerHTML = '';
+                        bloqueGrafica.appendChild(backupPlotly);
+                        
+                        // Devolvemos la interactividad a los botones
+                        btnDescargar.style.visibility = 'visible';
+                        btnActualizar.style.visibility = 'visible';
+                        btnDescargar.innerText = "📸 Descargar Reporte";
+                        btnDescargar.disabled = false;
+                    }).catch(err => {
+                        console.error("Error en html2canvas:", err);
+                        fallbackRestauracion(bloqueGrafica, backupPlotly, btnDescargar, btnActualizar);
+                    });
                 })
-                .catch(function (error) {
-                    console.error('Error al generar la imagen del reporte:', error);
-                    btnDescargar.style.visibility = 'visible';
-                    btnActualizar.style.visibility = 'visible';
+                .catch(function (err) {
+                    console.error("Error obteniendo imagen de Plotly:", err);
                     btnDescargar.innerText = "❌ Error al capturar";
                     btnDescargar.disabled = false;
                 });
+        }
+
+        function fallbackRestauracion(bloque, backup, btnD, btnA) {
+            bloque.innerHTML = '';
+            bloque.appendChild(backup);
+            btnD.style.visibility = 'visible';
+            btnA.style.visibility = 'visible';
+            btnD.innerText = "❌ Error al capturar";
+            btnD.disabled = false;
         }
 
         window.addEventListener('DOMContentLoaded', () => {
