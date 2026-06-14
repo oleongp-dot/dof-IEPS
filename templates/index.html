@@ -30,12 +30,17 @@
                 <span class="text-3xl">📊</span>
                 <div>
                     <h1 class="text-2xl font-bold tracking-tight text-[#F0F6FC]">DOF Monitor</h1>
-                    <p class="text-xs text-[#8B949E]" id="fecha-consulta">Cargando estado del sistema...</p>
+                    <p class="text-xs text-[#8B949E]" id="fecha-consulta">Cargando estado del system...</p>
                 </div>
             </div>
-            <button id="btn-actualizar" onclick="consultarAPI(true)" class="bg-[#238636] hover:bg-[#2EA043] text-white font-medium text-sm px-4 py-2 rounded transition-colors duration-200 cursor-pointer">
-                Actualizar
-            </button>
+            <div class="flex gap-2 w-full sm:w-auto">
+                <button id="btn-descargar" onclick="descargarGrafica()" class="bg-[#21262D] hover:bg-[#30363D] text-[#C9D1D9] border border-[#30363D] font-medium text-sm px-4 py-2 rounded transition-colors duration-200 cursor-pointer flex items-center gap-2">
+                    📸 Captura
+                </button>
+                <button id="btn-actualizar" onclick="consultarAPI(true)" class="bg-[#238636] hover:bg-[#2EA043] text-white font-medium text-sm px-4 py-2 rounded transition-colors duration-200 cursor-pointer">
+                    Actualizar
+                </button>
+            </div>
         </header>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -112,55 +117,57 @@
         function consultarAPI(forzarActualizacion = false) {
             const overlay = document.getElementById('loading-overlay');
             const btn = document.getElementById('btn-actualizar');
+            const btnDesc = document.getElementById('btn-descargar');
             
             overlay.classList.remove('hidden');
             btn.disabled = true;
             btn.classList.add('opacity-50', 'cursor-not-allowed');
+            if(btnDesc) btnDesc.disabled = true;
 
             const url = forzarActualizacion ? '/api/consultar?force=true' : '/api/consultar';
 
             fetch(url)
                 .then(response => response.json())
                 .then(data => {
-                    // 1. Actualizar metadatos de la consulta
                     document.getElementById('fecha-consulta').innerText = 
                         `Datos obtenidos: ${data.fecha_consulta} ${data.desde_cache ? '(Caché de sesión)' : '(Actualizado ahora)'}`;
 
-                    // 2. Procesar e inyectar valores de Tipo de Cambio
                     if (data.tipo_cambio) {
                         document.getElementById('val-tc').innerText = `$${data.tipo_cambio.valor.toFixed(4)}`;
                         mapearEstiloVariacion('var-tc', data.tipo_cambio.variacion);
                     }
 
-                    // 3. Procesar e inyectar valores de Combustibles (Estructura alineada con .regular)
                     if (data.ieps) {
-                        // Regular
                         if (data.ieps.regular) {
                             document.getElementById('val-regular').innerText = `$${data.ieps.regular.valor.toFixed(4)}`;
                             mapearEstiloVariacion('var-regular', data.ieps.regular.variacion);
                         }
-                        // Premium
                         if (data.ieps.premium) {
                             document.getElementById('val-premium').innerText = `$${data.ieps.premium.valor.toFixed(4)}`;
                             mapearEstiloVariacion('var-premium', data.ieps.premium.variacion);
                         }
-                        // Diésel
                         if (data.ieps.diesel) {
                             document.getElementById('val-diesel').innerText = `$${data.ieps.diesel.valor.toFixed(4)}`;
                             mapearEstiloVariacion('var-diesel', data.ieps.diesel.variacion);
                         }
                     }
 
-                    // 4. Renderizar o redibujar la gráfica interactiva de Plotly
                     if (data.grafica) {
                         const esquemaGrafica = JSON.parse(data.grafica);
                         
-                        // Configuración de respuesta responsiva y herramientas básicas de Plotly
+                        // Configuración que habilita la barra de Plotly y define las opciones de descarga nativas
                         const config = {
                             responsive: true,
                             displayModeBar: true,
                             displaylogo: false,
-                            modeBarButtonsToRemove: ['select2d', 'lasso2d', 'autoScale2d']
+                            modeBarButtonsToRemove: ['select2d', 'lasso2d', 'autoScale2d'],
+                            toImageButtonOptions: {
+                                format: 'png',
+                                filename: 'DOF_Monitor_Reporte',
+                                height: 700,
+                                width: 1100,
+                                scale: 2 // Duplica la resolución para que no se vea pixeleado al compartir en pantallas retina o móviles
+                            }
                         };
                         
                         Plotly.newPlot('contenedor-grafica', esquemaGrafica.data, esquemaGrafica.layout, config);
@@ -174,10 +181,24 @@
                     overlay.classList.add('hidden');
                     btn.disabled = false;
                     btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    if(btnDesc) btnDesc.disabled = false;
                 });
         }
 
-        // Carga inicial automática de la aplicación al abrir la pestaña
+        // Función del nuevo botón superior que activa la exportación nativa de la gráfica actual
+        function descargarGrafica() {
+            const graficaNode = document.getElementById('contenedor-grafica');
+            if (graficaNode && graficaNode.data) {
+                Plotly.downloadImage(graficaNode, {
+                    format: 'png', 
+                    filename: `DOF_Monitor_${new Date().toISOString().slice(0,10)}`,
+                    height: 700,
+                    width: 1100,
+                    scale: 2
+                });
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             consultarAPI(false);
         });
