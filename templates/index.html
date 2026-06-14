@@ -3,219 +3,190 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DOF Monitor</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <title>DOF Monitor — Panel Informativo</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         body {
-            background-color: #0D1117;
-            color: #E6EDF3;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #21262d;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 24px;
+            color: #f0f6fc;
+            margin: 0;
+        }
+        .btn-refresh {
+            background-color: #238636;
+            color: white;
+            border: 1px solid rgba(240,246,252,0.1);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .btn-refresh:hover {
+            background-color: #2ea44f;
+        }
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
         }
         .card {
-            background-color: #161B22;
-            border: 1px solid #30363D;
+            background-color: #161b22;
+            border: 1px solid #30363d;
             border-radius: 6px;
+            padding: 16px;
         }
-        .badge-sube { color: #58A6FF; }
-        .badge-baja { color: #FF7B72; }
-        .badge-neutral { color: #8B949E; }
+        .card-title {
+            font-size: 14px;
+            color: #8b949e;
+            margin-bottom: 8px;
+        }
+        .card-value {
+            font-size: 22px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+        .card-sub {
+            font-size: 12px;
+            margin-top: 6px;
+        }
+        .sube { color: #58a6ff; }
+        .baja { color: #ff7b72; }
+        .neutral { color: #8b949e; }
+        #grafica-plotly {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            overflow: hidden;
+            min-height: 700px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 18px;
+            color: #8b949e;
+        }
     </style>
 </head>
-<body class="p-4 md:p-8">
-
-    <div class="max-w-5xl mx-auto">
-        <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#30363D] pb-4 mb-6 gap-4">
-            <div class="flex items-center gap-3">
-                <span class="text-3xl">📊</span>
-                <div>
-                    <h1 class="text-2xl font-bold tracking-tight text-[#F0F6FC]">DOF Monitor</h1>
-                    <p class="text-xs text-[#8B949E]" id="fecha-consulta">Cargando estado del sistema...</p>
-                </div>
-            </div>
-            <div class="flex gap-2">
-                <button id="btn-descargar" onclick="descargarReporte()" class="bg-[#21262D] hover:bg-[#30363D] text-[#C9D1D9] border border-[#30363D] font-medium text-sm px-4 py-2 rounded transition-colors duration-200 cursor-pointer flex items-center gap-2">
-                    📸 Descargar Reporte
-                </button>
-                <button id="btn-actualizar" onclick="consultarAPI(true)" class="bg-[#238636] hover:bg-[#2EA043] text-white font-medium text-sm px-4 py-2 rounded transition-colors duration-200 cursor-pointer">
-                    Actualizar
-                </button>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 DOF Monitor</h1>
+            <div>
+                <span id="txt-cache" style="font-size:12px; color:#8b949e; margin-right:10px;"></span>
+                <button class="btn-refresh" onclick="cargarDatos(true)">Actualizar</button>
             </div>
         </header>
 
-        <div id="reporte-captura" class="bg-[#0D1117] p-6 rounded-lg relative min-h-[500px]">
-            
-            <div id="loading-overlay" class="absolute inset-0 bg-[#0D1117]/90 flex flex-col items-center justify-center gap-3 z-10 rounded">
-                <div class="animate-spin rounded-full h-10 w-10 border-4 border-[#30363D] border-t-[#58A6FF]"></div>
-                <p class="text-sm text-[#8B949E]">Consultando información del Diario Oficial de la Federación...</p>
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-title">💱 Tipo de Cambio</div>
+                <div id="tc-valor" class="card-value">--</div>
+                <div id="tc-var" class="card-sub">--</div>
             </div>
-
-            <div class="mb-4 flex items-center gap-2 border-b border-[#21262D] pb-3">
-                <span class="text-2xl">📊</span>
-                <div>
-                    <h2 class="text-lg font-bold text-[#F0F6FC]">Reporte Diario Automatizado</h2>
-                    <p class="text-xs text-[#8B949E]" id="img-meta-consulta">Consulta: --</p>
-                </div>
+            <div class="card">
+                <div class="card-title">🟢 Regular (&lt;91 oct)</div>
+                <div id="regular-valor" class="card-value">--</div>
+                <div id="regular-var" class="card-sub">--</div>
             </div>
-
-            <div class="card p-2 mb-6 overflow-hidden">
-                <div id="contenedor-grafica" class="w-full"></div>
+            <div class="card">
+                <div class="card-title">🔴 Premium (&ge;91 oct)</div>
+                <div id="premium-valor" class="card-value">--</div>
+                <div id="premium-var" class="card-sub">--</div>
             </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="card p-4 flex flex-col justify-between">
-                    <div>
-                        <h3 class="text-sm font-bold text-[#F0F6FC] flex items-center gap-2 mb-2">
-                            <span>💱</span> Tipo de Cambio de Referencia
-                        </h3>
-                        <p class="text-3xl font-extrabold text-[#58A6FF] tracking-tight" id="txt-val-tc">--</p>
-                    </div>
-                    <div class="mt-4 text-xs text-[#8B949E] leading-relaxed">
-                        <span class="font-semibold text-white">Variación diaria:</span> <span id="txt-var-tc" class="font-mono">--</span><br>
-                        <span class="text-[#8B949E] italic" id="txt-fecha-tc">(Publicado para surtir efectos al día hábil siguiente)</span>
-                    </div>
-                </div>
-
-                <div class="card p-4">
-                    <h3 class="text-sm font-bold text-[#F0F6FC] flex items-center gap-2 mb-3">
-                        <span>⛽</span> IEPS Combustibles (vs periodo anterior)
-                    </h3>
-                    <ul class="space-y-2.5 text-sm font-mono">
-                        <li class="flex justify-between items-center border-b border-[#21262D] pb-1.5">
-                            <span class="text-[#8B949E]">🟢 Regular (&lt;91 oct):</span>
-                            <span class="text-[#F0F6FC] font-bold" id="txt-val-regular">-- <span id="txt-var-regular" class="text-xs font-normal"></span></span>
-                        </li>
-                        <li class="flex justify-between items-center border-b border-[#21262D] pb-1.5">
-                            <span class="text-[#8B949E]">🔴 Premium (&ge;91 oct):</span>
-                            <span class="text-[#F0F6FC] font-bold" id="txt-val-premium">-- <span id="txt-var-premium" class="text-xs font-normal"></span></span>
-                        </li>
-                        <li class="flex justify-between items-center pb-0.5">
-                            <span class="text-[#8B949E]">⚪ Diésel:</span>
-                            <span class="text-[#F0F6FC] font-bold" id="txt-val-diesel">-- <span id="txt-var-diesel" class="text-xs font-normal"></span></span>
-                        </li>
-                    </ul>
-                    <div class="mt-4 pt-2 border-t border-[#30363D] text-xs flex justify-between items-center">
-                        <span class="text-[#8B949E]">📅 Periodo de vigencia:</span>
-                        <span class="font-semibold text-[#FFA657]" id="txt-vigencia-ieps">--</span>
-                    </div>
-                </div>
+            <div class="card">
+                <div class="card-title">⚪ Diésel</div>
+                <div id="diesel-valor" class="card-value">--</div>
+                <div id="diesel-var" class="card-sub">--</div>
             </div>
         </div>
+
+        <div id="status" class="loading">Consultando información al Diario Oficial de la Federación...</div>
+        
+        <div id="grafica-plotly"></div>
     </div>
 
     <script>
-        function formatearVariacionTexto(objeto) {
-            if (!objeto) return "--";
-            return `${objeto.texto} (${objeto.tipo.toUpperCase()})`;
-        }
-
-        function inyectarEstiloTexto(idValor, idVar, objeto) {
+        function actualizarTarjeta(idValor, idVar, objeto) {
             if (!objeto) return;
             document.getElementById(idValor).innerText = '$' + objeto.valor.toFixed(4);
             const varEl = document.getElementById(idVar);
             varEl.innerText = objeto.variacion.texto;
-            
-            if (objeto.variacion.tipo === "sube") {
-                varEl.className = "badge-sube font-bold";
-            } else if (objeto.variacion.tipo === "baja") {
-                varEl.className = "badge-baja font-bold";
-            } else {
-                varEl.className = "badge-neutral";
-            }
+            varEl.className = 'card-sub ' + objeto.variacion.tipo;
         }
 
-        function consultarAPI(forzarActualizacion = false) {
-            const overlay = document.getElementById('loading-overlay');
-            const btnAct = document.getElementById('btn-actualizar');
-            const btnDesc = document.getElementById('btn-descargar');
+        function cargarDatos(force = false) {
+            const statusEl = document.getElementById('status');
+            statusEl.style.display = 'block';
+            statusEl.innerText = 'Consultando información al Diario Oficial de la Federación...';
             
-            overlay.classList.remove('hidden');
-            btnAct.disabled = true;
-            btnDesc.disabled = true;
-
-            const url = forzarActualizacion ? '/api/consultar?force=true' : '/api/consultar';
+            let url = '/api/consultar';
+            if (force) url += '?force=true';
 
             fetch(url)
-                .then(response => response.json())
+                .then(res => res.json())
                 .then(data => {
-                    const metaTexto = `${data.fecha_consulta} ${data.desde_cache ? '(Caché)' : '(Fresco)'}`;
-                    document.getElementById('fecha-consulta').innerText = `Sincronización: ${metaTexto}`;
-                    document.getElementById('img-meta-consulta').innerText = `Reporte generado el: ${data.fecha_consulta}`;
-
-                    // Inyección Tipo de Cambio
+                    statusEl.style.display = 'none';
+                    
+                    // Actualizar indicadores numéricos superiores
                     if (data.tipo_cambio) {
-                        document.getElementById('txt-val-tc').innerText = `$${data.tipo_cambio.valor.toFixed(4)}`;
-                        const varTcEl = document.getElementById('txt-var-tc');
-                        varTcEl.innerText = data.tipo_cambio.variacion.texto;
-                        varTcEl.className = data.tipo_cambio.variacion.tipo === "sube" ? "badge-sube font-bold" : (data.tipo_cambio.variacion.tipo === "baja" ? "badge-baja font-bold" : "badge-neutral");
-                        document.getElementById('txt-fecha-tc').innerText = `(Publicado el ${data.tipo_cambio.fecha} para surtir efectos al día hábil siguiente)`;
+                        actualizarTarjeta('tc-valor', 'tc-var', data.tipo_cambio);
                     }
-
-                    // Inyección Combustibles
                     if (data.ieps) {
-                        inyectarEstiloTexto('txt-val-regular', 'txt-var-regular', data.ieps.regular);
-                        inyectarEstiloTexto('txt-val-premium', 'txt-var-premium', data.ieps.premium);
-                        inyectarEstiloTexto('txt-val-diesel', 'txt-var-diesel', data.ieps.diesel);
-                        document.getElementById('txt-vigencia-ieps').innerText = data.ieps.vigencia;
+                        actualizarTarjeta('regular-valor', 'regular-var', data.ieps.regular);
+                        actualizarTarjeta('premium-valor', 'premium-var', data.ieps.premium);
+                        actualizarTarjeta('diesel-valor', 'diesel-var', data.ieps.diesel);
                     }
 
-                    // Renderizar Gráfica
+                    document.getElementById('txt-cache').innerText = 
+                        (data.desde_cache ? 'Caché activo' : 'Datos frescos') + ' (' + data.fecha_consulta + ')';
+
+                    // Renderizar Gráfica de Plotly
                     if (data.grafica) {
-                        const esquema = JSON.parse(data.grafica);
-                        // Aumentamos ligeramente la altura en el layout para acomodar los datos mensuales holgadamente
-                        esquema.layout.height = 580; 
-                        Plotly.newPlot('contenedor-grafica', esquema.data, esquema.layout, {responsive: true, displayModeBar: false});
+                        const datosGrafica = JSON.parse(data.grafica);
+                        
+                        // Habilitamos la barra de herramientas superior nativa de Plotly.
+                        // Al pasar el mouse sobre la gráfica verás una cámara fotográfica (📷) que te descarga la imagen limpia al instante.
+                        const config = {
+                            responsive: true, 
+                            displayModeBar: true, 
+                            displaylogo: false,
+                            toImageButtonOptions: {
+                                format: 'png',
+                                filename: 'DOF_Monitor_Grafica',
+                                height: 700,
+                                width: 1100,
+                                scale: 2 // Alta definición
+                            }
+                        };
+                        Plotly.newPlot('grafica-plotly', datosGrafica.data, datosGrafica.layout, config);
                     }
                 })
-                .catch(error => console.error('Error:', error))
-                .finally(() => {
-                    overlay.classList.add('hidden');
-                    btnAct.disabled = false;
-                    btnDesc.disabled = false;
+                .catch(err => {
+                    statusEl.innerText = 'Error al cargar los datos del monitor.';
+                    console.error(err);
                 });
         }
 
-        // ==========================================
-        // FUNCIÓN DE CAPTURA DE PANTALLA (HTML2CANVAS)
-        // ==========================================
-        function descargarReporte() {
-            const contenedor = document.getElementById('reporte-captura');
-            const btnDescargar = document.getElementById('btn-descargar');
-            
-            btnDescargar.innerText = "📸 Generando imagen...";
-            btnDescargar.disabled = true;
-
-            // Configuramos html2canvas con optimizaciones para Dark Mode y alta resolución (scale: 2)
-            html2canvas(contenedor, {
-                backgroundColor: "#0D1117",
-                scale: 2, // Duplica la resolución para que los números y textos no se vean pixeleados
-                logging: false,
-                useCORS: true // Evita bloqueos si hay recursos externos
-            }).then(canvas => {
-                // Convertimos el canvas a un enlace binario PNG
-                const urlImagen = canvas.toDataURL('image/png');
-                const enlaceDescarga = document.createElement('a');
-                
-                // Formateamos el nombre del archivo con la fecha de hoy
-                const hoy = new Date().toISOString().slice(0,10);
-                enlaceDescarga.download = `DOF_Monitor_Reporte_${hoy}.png`;
-                enlaceDescarga.href = urlImagen;
-                
-                // Disparamos la descarga automática
-                enlaceDescarga.click();
-                
-                // Restauramos el botón
-                btnDescargar.innerText = "📸 Descargar Reporte";
-                btnDescargar.disabled = false;
-            }).catch(err => {
-                console.error("Error al generar captura:", err);
-                btnDescargar.innerText = "❌ Error al capturar";
-                btnDescargar.disabled = false;
-            });
-        }
-
-        window.addEventListener('DOMContentLoaded', () => consultarAPI(false));
+        window.onload = () => cargarDatos(false);
     </script>
 </body>
 </html>
