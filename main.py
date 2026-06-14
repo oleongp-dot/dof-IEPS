@@ -1,106 +1,106 @@
-def generar_grafica_json(datos):
-    fechas_tc = datos.get("fechas_tc", [])
-    valores_tc = datos.get("valores_tc", [])
-    fechas_ieps = datos.get("fechas_ieps", [])
-    vals_magna = datos.get("vals_magna", [])
-    vals_premium = datos.get("vals_premium", [])
-    vals_diesel = datos.get("vals_diesel", [])
+def buscar_dia(fecha):
+    day = fecha.strftime("%d")
+    month = fecha.strftime("%m")
+    year = fecha.strftime("%Y")
+    fecha_str = f"{day}/{month}/{year}"
 
-    # Creamos listas limpias ordenadas cronológicamente para evitar superposiciones
-    puntos_tc = []
-    for f, v in zip(fechas_tc, valores_tc):
-        try:
-            f_date = datetime.datetime.strptime(f, "%d/%m/%Y")
-            puntos_tc.append((f_date, v))
-        except:
-            continue
-    puntos_tc.sort(key=lambda x: x[0])
-
-    puntos_ieps = []
-    for f, m, p, d in zip(fechas_ieps, vals_magna, vals_premium, vals_diesel):
-        try:
-            f_date = datetime.datetime.strptime(f, "%d/%m/%Y")
-            puntos_ieps.append((f_date, m, p, d))
-        except:
-            continue
-    puntos_ieps.sort(key=lambda x: x[0])
-
-    if not puntos_tc and not puntos_ieps:
+    # Si es fin de semana, el DOF no publica de forma ordinaria indicadores fiscales o de tipo de cambio
+    if fecha.weekday() >= 5:
         return None
 
-    # Inicializamos los subplots de Plotly
-    fig = make_subplots(
-        rows=2, cols=1,
-        shared_xaxes=False,
-        vertical_spacing=0.15,
-        subplot_titles=("💱 Tipo de Cambio USD/MXN", "⛽ IEPS Combustibles (pesos/litro)")
-    )
+    tipo_cambio_url = None
+    ieps_url = None
 
-    # 1. Trazar Gráfica de Tipo de Cambio
-    if puntos_tc:
-        fx_tc = [p[0].strftime("%Y-%m-%d") for p in puntos_tc]
-        vy_tc = [p[1] for p in puntos_tc]
-        
-        fig.add_trace(
-            gr.Scatter(
-                x=fx_tc, y=vy_tc,
-                mode='lines+markers',
-                name='USD/MXN',
-                line=dict(color='#58A6FF', width=2.5),
-                marker=dict(size=7, symbol='circle'),
-                fill='tozeroy',
-                fillcolor='rgba(88, 166, 255, 0.06)'
-            ),
-            row=1, col=1
-        )
+    for edicion in ["MAT", "VES"]:
+        url = f"https://dof.gob.mx/index.php?year={year}&month={month}&day={day}&edicion={edicion}"
+        try:
+            respuesta = requests.get(url, headers=headers, verify=False, timeout=8)
+            soup = BeautifulSoup(respuesta.text, "html.parser")
 
-    # 2. Trazar Gráfica de IEPS Combustibles
-    if puntos_ieps:
-        fx_ieps = [p[0].strftime("%Y-%m-%d") for p in puntos_ieps]
-        vy_magna = [p[1] for p in puntos_ieps]
-        vy_premium = [p[2] for p in puntos_ieps]
-        vy_diesel = [p[3] for p in puntos_ieps]
-        
-        fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_magna, mode='lines+markers', name='Magna (<91 oct)', line=dict(color='#FF7B72', width=2.5), marker=dict(size=7)),
-            row=2, col=1
-        )
-        fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_premium, mode='lines+markers', name='Premium (≥91 oct)', line=dict(color='#FFA657', width=2.5), marker=dict(size=7)),
-            row=2, col=1
-        )
-        fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_diesel, mode='lines+markers', name='Diésel', line=dict(color='#3FB950', width=2.5), marker=dict(size=7)),
-            row=2, col=1
-        )
+            for pub in soup.find_all("a"):
+                texto = pub.text.lower().strip()
+                if not texto:
+                    continue
+                for palabra in palabras_clave:
+                    if palabra in texto:
+                        enlace = pub.get("href", "")
+                        if enlace and not enlace.startswith("http"):
+                            enlace = f"https://dof.gob.mx/{enlace}"
+                        if "nota_detalle" not in enlace and fecha_str not in enlace and "indicadores" not in enlace:
+                            continue
+                        if "tipo de cambio" in texto:
+                            tipo_cambio_url = enlace
+                        elif ieps_url is None:
+                            ieps_url = enlace
+                        break
+        except:
+            pass
 
-    # Configuración de estilos generales (Dark Mode elegante de GitHub)
-    fig.update_layout(
-        font=dict(color="#E6EDF3", family="Segoe UI, sans-serif"),
-        paper_bgcolor="#0D1117",
-        plot_bgcolor="#161B22",
-        height=600,
-        showlegend=True,
-        legend=dict(bgcolor="#21262D", bordercolor="#30363D", font=dict(size=10)),
-        margin=dict(l=60, r=40, t=50, b=50)
-    )
+    # Si no se encontró absolutamente nada este día hábil, lo descartamos para no ensuciar la gráfica
+    if not tipo_cambio_url and not ieps_url:
+        return None
 
-    # Ajustes estrictos de los ejes x para evitar distorsiones temporales
-    fig.update_xaxes(
-        type='category',  # Forzamos modo categoría para que se distribuya homogéneo día a día
-        showgrid=True,
-        gridcolor='rgba(139, 148, 158, 0.08)',
-        tickfont=dict(size=10, color="#8B949E"),
-        linecolor="#30363D"
-    )
-    fig.update_yaxes(
-        showgrid=True,
-        gridcolor='rgba(139, 148, 158, 0.08)',
-        tickfont=dict(size=10, color="#8B949E"),
-        linecolor="#30363D"
-    )
+    resultado_dia = {"fecha": fecha_str, "tc": None, "ieps": None}
+    if tipo_cambio_url:
+        resultado_dia["tc"] = extraer_tipo_cambio(tipo_cambio_url, fecha_str)
+    if ieps_url:
+        resultado_dia["ieps"] = extraer_ieps(ieps_url, fecha_str)
 
-    fig.update_yaxes(title_text="Pesos por dólar", autofocus=True, row=1, col=1)
-    fig.update_yaxes(title_text="Pesos por litro", row=2, col=1)
+    return resultado_dia
 
-    return fig.to_json()
+
+def run_scraper():
+    hoy = datetime.datetime.now()
+    resultados_dias = []
+    
+    # Buscaremos en una ventana de hasta 12 días hacia atrás para recolectar al menos 5 días hábiles con publicaciones reales
+    dias_a_revisar = [hoy - datetime.timedelta(days=i) for i in range(12)]
+    
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(buscar_dia, fecha): fecha for fecha in dias_a_revisar}
+        for future in as_completed(futures):
+            try:
+                resultado = future.result(timeout=10)
+                # Almacenamos solo si el día arrojó información válida de TC o IEPS
+                if resultado and (resultado.get("tc") or resultado.get("ieps")):
+                    resultados_dias.append(resultado)
+            except Exception:
+                pass
+
+    # Forzar el ordenamiento estrictamente cronológico por la fecha del objeto
+    try:
+        resultados_dias.sort(key=lambda x: datetime.datetime.strptime(x["fecha"], "%d/%m/%Y"))
+    except:
+        pass
+
+    fechas_tc, valores_tc = [], []
+    fechas_ieps, vals_magna, vals_premium, vals_diesel = [], [], [], []
+    ultima_fecha_tc = "No disponible"
+    ultima_vigencia = "No disponible"
+
+    for dia in resultados_dias:
+        if dia.get("tc") and dia["tc"].get("valor"):
+            fechas_tc.append(dia["tc"]["fecha"])
+            valores_tc.append(dia["tc"]["valor"])
+            ultima_fecha_tc = dia["tc"]["fecha"]
+            
+        if dia.get("ieps") and dia["ieps"].get("magna"):
+            fechas_ieps.append(dia["ieps"]["fecha"])
+            vals_magna.append(dia["ieps"]["magna"])
+            vals_premium.append(dia["ieps"]["premium"])
+            vals_diesel.append(dia["ieps"]["diesel"])
+            ultima_vigencia = dia["ieps"]["vigencia"]
+
+    datos = {
+        "fecha_consulta": hoy.strftime("%d/%m/%Y %H:%M"),
+        "fechas_tc": fechas_tc,
+        "valores_tc": valores_tc,
+        "fechas_ieps": fechas_ieps,
+        "vals_magna": vals_magna,
+        "vals_premium": vals_premium,
+        "vals_diesel": vals_diesel,
+        "ultima_fecha_tc": ultima_fecha_tc,
+        "ultima_vigencia": ultima_vigencia,
+    }
+    guardar_cache(datos)
+    return datos
