@@ -15,7 +15,6 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.concurrency import run_in_threadpool
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from functools import lru_cache
 import threading
 
 warnings.filterwarnings("ignore")
@@ -32,30 +31,30 @@ palabras_clave = [
 ]
 
 # ==========================================
-# CACHÉ — evita re-scrapear en 30 minutos
+# CACHÉ — guarda solo datos, no la gráfica
 # ==========================================
-_cache = {"resultado": None, "timestamp": None}
+_cache = {"datos": None, "timestamp": None}
 _cache_lock = threading.Lock()
 CACHE_MINUTOS = 30
 
 
 def cache_valido():
     with _cache_lock:
-        if _cache["resultado"] is None or _cache["timestamp"] is None:
+        if _cache["datos"] is None:
             return False
         delta = datetime.datetime.now() - _cache["timestamp"]
         return delta.total_seconds() < CACHE_MINUTOS * 60
 
 
-def guardar_cache(resultado):
+def guardar_cache(datos):
     with _cache_lock:
-        _cache["resultado"] = resultado
+        _cache["datos"] = datos
         _cache["timestamp"] = datetime.datetime.now()
 
 
 def obtener_cache():
     with _cache_lock:
-        return _cache["resultado"]
+        return _cache["datos"]
 
 
 # ==========================================
@@ -75,25 +74,19 @@ def extraer_ieps(url, fecha_str):
             vigencia_str = vigencia.group(1).strip() if vigencia else "No disponible"
 
             patrones = {
-                "Gasolina < 91 oct": r"Gasolina\s+menor\s+a\s+91\s+octanos\s+(\$[\d.]+)",
-                "Gasolina >= 91 oct": r"Gasolina\s+mayor\s+o\s+igual\s+a\s+91\s+octanos.*?(\$[\d.]+)",
-                "Diésel": r"Diésel\s+(\$[\d.]+)"
+                "magna":   r"Gasolina\s+menor\s+a\s+91\s+octanos\s+(\$[\d.]+)",
+                "premium": r"Gasolina\s+mayor\s+o\s+igual\s+a\s+91\s+octanos.*?(\$[\d.]+)",
+                "diesel":  r"Diésel\s+(\$[\d.]+)"
             }
 
             valores = {}
-            for combustible, patron in patrones.items():
+            for key, patron in patrones.items():
                 match = re.search(patron, bloque, re.DOTALL | re.IGNORECASE)
                 if match:
-                    valores[combustible] = float(match.group(1).replace("$", ""))
+                    valores[key] = float(match.group(1).replace("$", ""))
 
             if len(valores) == 3:
-                return {
-                    "fecha": fecha_str,
-                    "vigencia": vigencia_str,
-                    "magna": valores["Gasolina < 91 oct"],
-                    "premium": valores["Gasolina >= 91 oct"],
-                    "diesel": valores["Diésel"]
-                }
+                return {"fecha": fecha_str, "vigencia": vigencia_str, **valores}
     except:
         pass
     return None
@@ -118,7 +111,6 @@ def extraer_tipo_cambio(url, fecha_str):
 
 
 def buscar_dia(fecha):
-    """Retorna dict con datos del día o None si no hay nada relevante."""
     day = fecha.strftime("%d")
     month = fecha.strftime("%m")
     year = fecha.strftime("%Y")
@@ -156,10 +148,8 @@ def buscar_dia(fecha):
             pass
 
     resultado_dia = {"fecha": fecha_str, "tc": None, "ieps": None}
-
     if tipo_cambio_url:
         resultado_dia["tc"] = extraer_tipo_cambio(tipo_cambio_url, fecha_str)
-
     if ieps_url:
         resultado_dia["ieps"] = extraer_ieps(ieps_url, fecha_str)
 
@@ -169,18 +159,22 @@ def buscar_dia(fecha):
 def calcular_variacion(lista_valores):
     if len(lista_valores) < 2:
         return {"texto": "Sin histórico", "tipo": "neutral", "valor": 0}
-    actual = lista_valores[-1]
-    anterior = lista_valores[-2]
-    diferencia = actual - anterior
+    diferencia = lista_valores[-1] - lista_valores[-2]
     if diferencia > 0:
         return {"texto": f"+${diferencia:.4f}", "tipo": "sube", "valor": diferencia}
     elif diferencia < 0:
         return {"texto": f"-${abs(diferencia):.4f}", "tipo": "baja", "valor": diferencia}
-    else:
-        return {"texto": "Sin cambios", "tipo": "neutral", "valor": 0}
+    return {"texto": "Sin cambios", "tipo": "neutral", "valor": 0}
 
 
-def generar_grafica_base64(fechas_tc, valores_tc, fechas_ieps, vals_magna, vals_premium, vals_diesel):
+def generar_grafica_base64(datos):
+    fechas_tc    = datos["fechas_tc"]
+    valores_tc   = datos["valores_tc"]
+    fechas_ieps  = datos["fechas_ieps"]
+    vals_magna   = datos["vals_magna"]
+    vals_premium = datos["vals_premium"]
+    vals_diesel  = datos["vals_diesel"]
+
     if not fechas_tc and not fechas_ieps:
         return None
 
@@ -212,9 +206,9 @@ def generar_grafica_base64(fechas_tc, valores_tc, fechas_ieps, vals_magna, vals_
 
     if fechas_ieps:
         fechas_dt2 = [parse_fecha(f) for f in fechas_ieps]
-        ax2.plot(fechas_dt2, vals_magna, color="#FF7B72", linewidth=2, marker="o", markersize=4, label="Magna (<91 oct)")
+        ax2.plot(fechas_dt2, vals_magna,   color="#FF7B72", linewidth=2, marker="o", markersize=4, label="Magna (<91 oct)")
         ax2.plot(fechas_dt2, vals_premium, color="#FFA657", linewidth=2, marker="o", markersize=4, label="Premium (≥91 oct)")
-        ax2.plot(fechas_dt2, vals_diesel, color="#3FB950", linewidth=2, marker="o", markersize=4, label="Diésel")
+        ax2.plot(fechas_dt2, vals_diesel,  color="#3FB950", linewidth=2, marker="o", markersize=4, label="Diésel")
         ax2.set_title("⛽ IEPS Combustibles (pesos/litro)", color="#E6EDF3", fontsize=11, pad=8)
         ax2.set_ylabel("Pesos por litro", color="#8B949E", fontsize=9)
         ax2.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
@@ -233,7 +227,6 @@ def run_scraper():
     hoy = datetime.datetime.now()
     dias = [hoy - datetime.timedelta(days=i) for i in range(7, -1, -1)]
 
-    # ── Búsqueda en paralelo ──
     resultados_dias = []
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(buscar_dia, fecha): fecha for fecha in dias}
@@ -242,14 +235,12 @@ def run_scraper():
             if resultado:
                 resultados_dias.append(resultado)
 
-    # Ordenar por fecha
     resultados_dias.sort(key=lambda x: datetime.datetime.strptime(x["fecha"], "%d/%m/%Y"))
 
-    # Consolidar datos
     fechas_tc, valores_tc = [], []
     fechas_ieps, vals_magna, vals_premium, vals_diesel = [], [], [], []
     ultima_fecha_tc = "No disponible"
-    ultima_vigencia_ieps = "No disponible"
+    ultima_vigencia = "No disponible"
 
     for dia in resultados_dias:
         if dia["tc"]:
@@ -261,34 +252,47 @@ def run_scraper():
             vals_magna.append(dia["ieps"]["magna"])
             vals_premium.append(dia["ieps"]["premium"])
             vals_diesel.append(dia["ieps"]["diesel"])
-            ultima_vigencia_ieps = dia["ieps"]["vigencia"]
+            ultima_vigencia = dia["ieps"]["vigencia"]
 
-    grafica_b64 = generar_grafica_base64(fechas_tc, valores_tc, fechas_ieps, vals_magna, vals_premium, vals_diesel)
+    # Guardamos solo datos simples en caché (sin matplotlib)
+    datos = {
+        "fecha_consulta": hoy.strftime("%d/%m/%Y %H:%M"),
+        "fechas_tc": fechas_tc, "valores_tc": valores_tc,
+        "fechas_ieps": fechas_ieps, "vals_magna": vals_magna,
+        "vals_premium": vals_premium, "vals_diesel": vals_diesel,
+        "ultima_fecha_tc": ultima_fecha_tc,
+        "ultima_vigencia": ultima_vigencia
+    }
+    guardar_cache(datos)
+    return datos
+
+
+def construir_respuesta(datos, desde_cache=False):
+    grafica_b64 = generar_grafica_base64(datos)
 
     resultado = {
-        "fecha_consulta": hoy.strftime("%d/%m/%Y %H:%M"),
+        "fecha_consulta": datos["fecha_consulta"],
         "tipo_cambio": None,
         "ieps": None,
         "grafica": grafica_b64,
-        "desde_cache": False
+        "desde_cache": desde_cache
     }
 
-    if valores_tc:
+    if datos["valores_tc"]:
         resultado["tipo_cambio"] = {
-            "valor": valores_tc[-1],
-            "fecha": ultima_fecha_tc,
-            "variacion": calcular_variacion(valores_tc)
+            "valor": datos["valores_tc"][-1],
+            "fecha": datos["ultima_fecha_tc"],
+            "variacion": calcular_variacion(datos["valores_tc"])
         }
 
-    if vals_magna:
+    if datos["vals_magna"]:
         resultado["ieps"] = {
-            "vigencia": ultima_vigencia_ieps,
-            "magna":   {"valor": vals_magna[-1],   "variacion": calcular_variacion(vals_magna)},
-            "premium": {"valor": vals_premium[-1],  "variacion": calcular_variacion(vals_premium)},
-            "diesel":  {"valor": vals_diesel[-1],   "variacion": calcular_variacion(vals_diesel)}
+            "vigencia": datos["ultima_vigencia"],
+            "magna":   {"valor": datos["vals_magna"][-1],   "variacion": calcular_variacion(datos["vals_magna"])},
+            "premium": {"valor": datos["vals_premium"][-1], "variacion": calcular_variacion(datos["vals_premium"])},
+            "diesel":  {"valor": datos["vals_diesel"][-1],  "variacion": calcular_variacion(datos["vals_diesel"])}
         }
 
-    guardar_cache(resultado)
     return resultado
 
 
@@ -304,9 +308,10 @@ async def index():
 @app.get("/api/consultar")
 async def consultar(force: bool = False):
     if not force and cache_valido():
-        cached = obtener_cache()
-        cached["desde_cache"] = True
-        return JSONResponse(content=cached)
+        datos = obtener_cache()
+        resultado = await run_in_threadpool(construir_respuesta, datos, True)
+        return JSONResponse(content=resultado)
 
-    resultado = await run_in_threadpool(run_scraper)
+    datos = await run_in_threadpool(run_scraper)
+    resultado = await run_in_threadpool(construir_respuesta, datos, False)
     return JSONResponse(content=resultado)
