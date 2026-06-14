@@ -60,7 +60,7 @@ def obtener_cache():
 
 
 # ==========================================
-# SCRAPERS DE EXTRACCIÓN (CORREGIDO)
+# SCRAPERS DE EXTRACCIÓN
 # ==========================================
 def extraer_ieps(url, fecha_str):
     try:
@@ -109,7 +109,7 @@ def extraer_ieps(url, fecha_str):
 def extraer_tipo_cambio(url, fecha_str):
     try:
         respuesta = requests.get(url, headers=headers, verify=False, timeout=8)
-        # CORRECCIÓN: Se removió la referencia circular 'soup.text' errónea
+        # LÍNEA CORREGIDA: Inicialización limpia de BeautifulSoup
         soup = BeautifulSoup(respuesta.text, "html.parser")
         texto = soup.get_text()
 
@@ -200,7 +200,7 @@ def calcular_variacion(lista_valores):
 
 
 # ==========================================
-# GENERACIÓN DE GRÁFICA OPTIMIZADA
+# GENERACIÓN DE GRÁFICA INTERACTIVA PLOTLY
 # ==========================================
 def generar_grafica_json(datos):
     fechas_tc = datos.get("fechas_tc", [])
@@ -245,7 +245,6 @@ def generar_grafica_json(datos):
         fx_tc = [p[0].strftime("%Y-%m-%d") for p in puntos_tc]
         vy_tc = [p[1] for p in puntos_tc]
         
-        # Mapeo para dejar textos vacíos ("") en el histórico y el valor solo en la última fecha
         textos_tc = [""] * len(vy_tc)
         if textos_tc:
             textos_tc[-1] = f"${vy_tc[-1]:.4f}"
@@ -273,12 +272,10 @@ def generar_grafica_json(datos):
         vy_premium = [p[2] for p in puntos_ieps]
         vy_diesel = [p[3] for p in puntos_ieps]
         
-        # Estructura de arreglos vacíos para los labels limpios
         textos_reg = [""] * len(vy_regular)
         textos_prem = [""] * len(vy_premium)
         textos_die = [""] * len(vy_diesel)
         
-        # Asignamos el label únicamente al último nodo indexado
         if textos_reg: textos_reg[-1] = f"${vy_regular[-1]:.4f}"
         if textos_prem: textos_prem[-1] = f"${vy_premium[-1]:.4f}"
         if textos_die: textos_die[-1] = f"${vy_diesel[-1]:.4f}"
@@ -304,7 +301,7 @@ def generar_grafica_json(datos):
                 mode='lines+markers+text', 
                 name='Premium (≥91 oct)', 
                 text=textos_prem,
-                textposition="bottom center", # Cambiado a bottom para que no choque con Regular
+                textposition="bottom center", 
                 textfont=font_labels,
                 line=dict(color='#FF7B72', width=2), 
                 marker=dict(size=5)
@@ -330,7 +327,7 @@ def generar_grafica_json(datos):
         font=dict(color="#E6EDF3", family="Segoe UI, sans-serif"),
         paper_bgcolor="#0D1117",
         plot_bgcolor="#161B22",
-        height=720, # Volvemos a una altura compacta y estilizada original
+        height=720, 
         showlegend=True,
         legend=dict(bgcolor="#21262D", bordercolor="#30363D", font=dict(size=10)),
         margin=dict(l=60, r=60, t=40, b=40)
