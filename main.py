@@ -60,7 +60,7 @@ def obtener_cache():
 
 
 # ==========================================
-# SCRAPERS DE EXTRACCIÓN
+# SCRAPERS DE EXTRACCIÓN (CORREGIDO)
 # ==========================================
 def extraer_ieps(url, fecha_str):
     try:
@@ -109,7 +109,8 @@ def extraer_ieps(url, fecha_str):
 def extraer_tipo_cambio(url, fecha_str):
     try:
         respuesta = requests.get(url, headers=headers, verify=False, timeout=8)
-        soup = BeautifulSoup(soup.text if hasattr(soup, 'text') else respuesta.text, "html.parser")
+        # CORRECCIÓN: Se removió la referencia circular 'soup.text' errónea
+        soup = BeautifulSoup(respuesta.text, "html.parser")
         texto = soup.get_text()
 
         match = re.search(
@@ -199,7 +200,7 @@ def calcular_variacion(lista_valores):
 
 
 # ==========================================
-# GENERACIÓN DE GRÁFICA CON DATA LABELS
+# GENERACIÓN DE GRÁFICA OPTIMIZADA
 # ==========================================
 def generar_grafica_json(datos):
     fechas_tc = datos.get("fechas_tc", [])
@@ -233,38 +234,54 @@ def generar_grafica_json(datos):
     fig = make_subplots(
         rows=2, cols=1,
         shared_xaxes=False,
-        vertical_spacing=0.15,
+        vertical_spacing=0.12,
         subplot_titles=("💱 Tipo de Cambio USD/MXN", "⛽ IEPS Combustibles (Pesos/Litro)")
     )
 
-    # ESTILO COMÚN PARA LABELS
-    font_labels = dict(size=9, color="#E6EDF3", family="Segoe UI")
+    font_labels = dict(size=10, color="#E6EDF3", family="Segoe UI", weight="bold")
 
+    # --- 1. CONFIGURACIÓN GRÁFICA TIPO DE CAMBIO ---
     if puntos_tc:
         fx_tc = [p[0].strftime("%Y-%m-%d") for p in puntos_tc]
         vy_tc = [p[1] for p in puntos_tc]
         
+        # Mapeo para dejar textos vacíos ("") en el histórico y el valor solo en la última fecha
+        textos_tc = [""] * len(vy_tc)
+        if textos_tc:
+            textos_tc[-1] = f"${vy_tc[-1]:.4f}"
+
         fig.add_trace(
             gr.Scatter(
                 x=fx_tc, y=vy_tc,
-                mode='lines+markers+text', # Se agrega '+text'
+                mode='lines+markers+text',
                 name='USD/MXN',
-                text=[f"${v:.4f}" for v in vy_tc], # Texto de las etiquetas
+                text=textos_tc,
                 textposition="top center",
                 textfont=font_labels,
                 line=dict(color='#58A6FF', width=2),
-                marker=dict(size=6),
+                marker=dict(size=5),
                 fill='tozeroy',
-                fillcolor='rgba(88, 166, 255, 0.02)'
+                fillcolor='rgba(88, 166, 255, 0.01)'
             ),
             row=1, col=1
         )
 
+    # --- 2. CONFIGURACIÓN GRÁFICA IEPS ---
     if puntos_ieps:
         fx_ieps = [p[0].strftime("%Y-%m-%d") for p in puntos_ieps]
         vy_regular = [p[1] for p in puntos_ieps]
         vy_premium = [p[2] for p in puntos_ieps]
         vy_diesel = [p[3] for p in puntos_ieps]
+        
+        # Estructura de arreglos vacíos para los labels limpios
+        textos_reg = [""] * len(vy_regular)
+        textos_prem = [""] * len(vy_premium)
+        textos_die = [""] * len(vy_diesel)
+        
+        # Asignamos el label únicamente al último nodo indexado
+        if textos_reg: textos_reg[-1] = f"${vy_regular[-1]:.4f}"
+        if textos_prem: textos_prem[-1] = f"${vy_premium[-1]:.4f}"
+        if textos_die: textos_die[-1] = f"${vy_diesel[-1]:.4f}"
         
         # Regular (Verde)
         fig.add_trace(
@@ -272,11 +289,11 @@ def generar_grafica_json(datos):
                 x=fx_ieps, y=vy_regular, 
                 mode='lines+markers+text', 
                 name='Regular (<91 oct)', 
-                text=[f"${v:.4f}" for v in vy_regular],
+                text=textos_reg,
                 textposition="top center",
                 textfont=font_labels,
                 line=dict(color='#3FB950', width=2), 
-                marker=dict(size=6)
+                marker=dict(size=5)
             ),
             row=2, col=1
         )
@@ -286,11 +303,11 @@ def generar_grafica_json(datos):
                 x=fx_ieps, y=vy_premium, 
                 mode='lines+markers+text', 
                 name='Premium (≥91 oct)', 
-                text=[f"${v:.4f}" for v in vy_premium],
-                textposition="top center",
+                text=textos_prem,
+                textposition="bottom center", # Cambiado a bottom para que no choque con Regular
                 textfont=font_labels,
                 line=dict(color='#FF7B72', width=2), 
-                marker=dict(size=6)
+                marker=dict(size=5)
             ),
             row=2, col=1
         )
@@ -300,11 +317,11 @@ def generar_grafica_json(datos):
                 x=fx_ieps, y=vy_diesel, 
                 mode='lines+markers+text', 
                 name='Diésel', 
-                text=[f"${v:.4f}" for v in vy_diesel],
-                textposition="bottom center", # Diesel abajo para evitar encimarse
+                text=textos_die,
+                textposition="top center",
                 textfont=font_labels,
                 line=dict(color='#FFFFFF', width=2), 
-                marker=dict(size=6)
+                marker=dict(size=5)
             ),
             row=2, col=1
         )
@@ -313,33 +330,32 @@ def generar_grafica_json(datos):
         font=dict(color="#E6EDF3", family="Segoe UI, sans-serif"),
         paper_bgcolor="#0D1117",
         plot_bgcolor="#161B22",
-        height=850, # Aumentado ligeramente para dar aire a los labels
+        height=720, # Volvemos a una altura compacta y estilizada original
         showlegend=True,
         legend=dict(bgcolor="#21262D", bordercolor="#30363D", font=dict(size=10)),
-        margin=dict(l=60, r=40, t=50, b=50)
+        margin=dict(l=60, r=60, t=40, b=40)
     )
 
     fig.update_xaxes(
         type='category',
         showgrid=True,
-        gridcolor='rgba(139, 148, 158, 0.08)',
+        gridcolor='rgba(139, 148, 158, 0.05)',
         tickfont=dict(size=9, color="#8B949E"),
         linecolor="#30363D",
         tickangle=-45
     )
 
-    # Límites dinámicos para zoom de volatilidad
     if puntos_tc:
         valores = [p[1] for p in puntos_tc]
         min_val, max_val = min(valores), max(valores)
-        margen = max((max_val - min_val) * 0.15, 0.01) # Margen mayor para labels
-        fig.update_yaxes(title_text="Pesos por dólar", row=1, col=1, autorange=False, range=[min_val - margen, max_val + margen], gridcolor='rgba(139, 148, 158, 0.08)', tickfont=dict(size=10, color="#8B949E"), linecolor="#30363D", tickformat=".4f")
+        margen = max((max_val - min_val) * 0.1, 0.02)
+        fig.update_yaxes(title_text="Pesos por dólar", row=1, col=1, autorange=False, range=[min_val - margen, max_val + margen], gridcolor='rgba(139, 148, 158, 0.05)', tickfont=dict(size=10, color="#8B949E"), linecolor="#30363D", tickformat=".4f")
 
     if puntos_ieps:
         todos_ieps = vy_regular + vy_premium + vy_diesel
         min_ieps, max_ieps = min(todos_ieps), max(todos_ieps)
-        margen_ieps = max((max_ieps - min_ieps) * 0.2, 0.1) # Margen mayor para labels
-        fig.update_yaxes(title_text="Pesos por litro", row=2, col=1, autorange=False, range=[min_ieps - margen_ieps, max_ieps + margen_ieps], gridcolor='rgba(139, 148, 158, 0.08)', tickfont=dict(size=10, color="#8B949E"), linecolor="#30363D", tickformat=".4f")
+        margen_ieps = max((max_ieps - min_ieps) * 0.1, 0.2)
+        fig.update_yaxes(title_text="Pesos por litro", row=2, col=1, autorange=False, range=[min_ieps - margen_ieps, max_ieps + margen_ieps], gridcolor='rgba(139, 148, 158, 0.05)', tickfont=dict(size=10, color="#8B949E"), linecolor="#30363D", tickformat=".4f")
 
     return fig.to_json()
 
