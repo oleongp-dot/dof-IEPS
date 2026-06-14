@@ -12,8 +12,8 @@ import matplotlib.dates as mdates
 import base64
 import io
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.concurrency import run_in_threadpool
 import json
 
 warnings.filterwarnings("ignore")
@@ -32,7 +32,7 @@ palabras_clave = [
 
 def extraer_ieps(url, fecha_str, data):
     try:
-        respuesta = requests.get(url, headers=headers, verify=False, timeout=10)
+        respuesta = requests.get(url, headers=headers, verify=False, timeout=20)
         soup = BeautifulSoup(respuesta.text, "html.parser")
         texto = soup.get_text()
 
@@ -68,7 +68,7 @@ def extraer_ieps(url, fecha_str, data):
 
 def extraer_tipo_cambio(url, fecha_str, data):
     try:
-        respuesta = requests.get(url, headers=headers, verify=False, timeout=10)
+        respuesta = requests.get(url, headers=headers, verify=False, timeout=20)
         soup = BeautifulSoup(respuesta.text, "html.parser")
         texto = soup.get_text()
 
@@ -99,7 +99,7 @@ def buscar_dia(fecha, data):
     for edicion in ["MAT", "VES"]:
         url = f"https://dof.gob.mx/index.php?year={year}&month={month}&day={day}&edicion={edicion}"
         try:
-            respuesta = requests.get(url, headers=headers, verify=False, timeout=10)
+            respuesta = requests.get(url, headers=headers, verify=False, timeout=20)
             soup = BeautifulSoup(respuesta.text, "html.parser")
             publicaciones = soup.find_all("a")
 
@@ -197,7 +197,7 @@ def generar_grafica_base64(data):
     return base64.b64encode(buf.read()).decode("utf-8")
 
 
-async def run_scraper():
+def run_scraper():
     data = {
         "fechas_tc": [], "valores_tc": [],
         "fechas_ieps": [], "valores_gasolina_menor": [],
@@ -255,7 +255,10 @@ async def index():
         return f.read()
 
 
+def scraper_sync():
+    return run_scraper()
+
 @app.get("/api/consultar")
 async def consultar():
-    resultado = await run_scraper()
+    resultado = await run_in_threadpool(scraper_sync)
     return JSONResponse(content=resultado)
