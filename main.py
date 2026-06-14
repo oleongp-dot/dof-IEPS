@@ -84,7 +84,7 @@ def extraer_ieps(url, fecha_str):
             )
 
             patrones = {
-                "magna": r"Gasolina\s+menor\s+a\s+91\s+octanos\s+(\$[\d.]+)",
+                "regular": r"Gasolina\s+menor\s+a\s+91\s+octanos\s+(\$[\d.]+)",
                 "premium": r"Gasolina\s+mayor\s+o\s+igual\s+a\s+91\s+octanos.*?(\$[\d.]+)",
                 "diesel": r"Diésel\s+(\$[\d.]+)",
             }
@@ -205,7 +205,7 @@ def generar_grafica_json(datos):
     fechas_tc = datos.get("fechas_tc", [])
     valores_tc = datos.get("valores_tc", [])
     fechas_ieps = datos.get("fechas_ieps", [])
-    vals_magna = datos.get("vals_magna", [])
+    vals_regular = datos.get("vals_regular", [])
     vals_premium = datos.get("vals_premium", [])
     vals_diesel = datos.get("vals_diesel", [])
 
@@ -219,7 +219,7 @@ def generar_grafica_json(datos):
     puntos_tc.sort(key=lambda x: x[0])
 
     puntos_ieps = []
-    for f, m, p, d in zip(fechas_ieps, vals_magna, vals_premium, vals_diesel):
+    for f, m, p, d in zip(fechas_ieps, vals_regular, vals_premium, vals_diesel):
         try:
             f_date = datetime.datetime.strptime(f, "%d/%m/%Y")
             puntos_ieps.append((f_date, m, p, d))
@@ -256,20 +256,21 @@ def generar_grafica_json(datos):
 
     if puntos_ieps:
         fx_ieps = [p[0].strftime("%Y-%m-%d") for p in puntos_ieps]
-        vy_magna = [p[1] for p in puntos_ieps]
+        vy_regular = [p[1] for p in puntos_ieps]
         vy_premium = [p[2] for p in puntos_ieps]
         vy_diesel = [p[3] for p in puntos_ieps]
         
+        # Ajustes de Paleta de Colores solicitada: Regular (Verde), Premium (Roja), Diésel (Blanca)
         fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_magna, mode='lines+markers', name='Magna (<91 oct)', line=dict(color='#FF7B72', width=2.5), marker=dict(size=7)),
+            gr.Scatter(x=fx_ieps, y=vy_regular, mode='lines+markers', name='Regular (<91 oct)', line=dict(color='#3FB950', width=2.5), marker=dict(size=7)),
             row=2, col=1
         )
         fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_premium, mode='lines+markers', name='Premium (≥91 oct)', line=dict(color='#FFA657', width=2.5), marker=dict(size=7)),
+            gr.Scatter(x=fx_ieps, y=vy_premium, mode='lines+markers', name='Premium (≥91 oct)', line=dict(color='#FF7B72', width=2.5), marker=dict(size=7)),
             row=2, col=1
         )
         fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_diesel, mode='lines+markers', name='Diésel', line=dict(color='#3FB950', width=2.5), marker=dict(size=7)),
+            gr.Scatter(x=fx_ieps, y=vy_diesel, mode='lines+markers', name='Diésel', line=dict(color='#FFFFFF', width=2.5), marker=dict(size=7)),
             row=2, col=1
         )
 
@@ -298,7 +299,6 @@ def generar_grafica_json(datos):
         valores = [p[1] for p in puntos_tc]
         min_val = min(valores)
         max_val = max(valores)
-        # Margen mínimo del 5% del rango o 0.005 pesos
         margen = max((max_val - min_val) * 0.05, 0.005)
         
         fig.update_yaxes(
@@ -361,7 +361,7 @@ def run_scraper():
         pass
 
     fechas_tc, valores_tc = [], []
-    fechas_ieps, vals_magna, vals_premium, vals_diesel = [], [], [], []
+    fechas_ieps, vals_regular, vals_premium, vals_diesel = [], [], [], []
     ultima_fecha_tc = "No disponible"
     ultima_vigencia = "No disponible"
 
@@ -371,9 +371,9 @@ def run_scraper():
             valores_tc.append(dia["tc"]["valor"])
             ultima_fecha_tc = dia["tc"]["fecha"]
             
-        if dia.get("ieps") and dia["ieps"].get("magna"):
+        if dia.get("ieps") and dia["ieps"].get("regular"):
             fechas_ieps.append(dia["ieps"]["fecha"])
-            vals_magna.append(dia["ieps"]["magna"])
+            vals_regular.append(dia["ieps"]["regular"])
             vals_premium.append(dia["ieps"]["premium"])
             vals_diesel.append(dia["ieps"]["diesel"])
             ultima_vigencia = dia["ieps"]["vigencia"]
@@ -383,7 +383,7 @@ def run_scraper():
         "fechas_tc": fechas_tc,
         "valores_tc": valores_tc,
         "fechas_ieps": fechas_ieps,
-        "vals_magna": vals_magna,
+        "vals_regular": vals_regular,
         "vals_premium": vals_premium,
         "vals_diesel": vals_diesel,
         "ultima_fecha_tc": ultima_fecha_tc,
@@ -411,12 +411,12 @@ def construir_respuesta(datos, desde_cache=False):
             "variacion": calcular_variacion(datos["valores_tc"]),
         }
 
-    if datos["vals_magna"]:
+    if datos["vals_regular"]:
         resultado["ieps"] = {
             "vigencia": datos["ultima_vigencia"],
-            "magna": {
-                "valor": datos["vals_magna"][-1],
-                "variacion": calcular_variacion(datos["vals_magna"]),
+            "regular": {
+                "valor": datos["vals_regular"][-1],
+                "variacion": calcular_variacion(datos["vals_regular"]),
             },
             "premium": {
                 "valor": datos["vals_premium"][-1],
