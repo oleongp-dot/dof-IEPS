@@ -140,7 +140,6 @@
                     }
 
                     if (data.ieps) {
-                        // Mapeo adaptado para inyectar data.ieps.regular dentro del elemento visual de Magna
                         if (data.ieps.regular) {
                             document.getElementById('val-magna').innerText = `$${data.ieps.regular.valor.toFixed(4)}`;
                             mapearEstiloVariacion('var-magna', data.ieps.regular.variacion);
@@ -157,6 +156,16 @@
 
                     if (data.grafica) {
                         const esquemaGrafica = JSON.parse(data.grafica);
+                        
+                        // Interceptamos y modificamos la leyenda de Plotly antes de renderizar
+                        if (esquemaGrafica.data && Array.isArray(esquemaGrafica.data)) {
+                            esquemaGrafica.data.forEach(linea => {
+                                if (linea.name && linea.name.includes("Regular")) {
+                                    linea.name = linea.name.replace("Regular", "Magna");
+                                }
+                            });
+                        }
+
                         const config = {
                             responsive: true,
                             displayModeBar: true,
