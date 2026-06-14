@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 warnings.filterwarnings("ignore")
 
 # ==========================================
-# INICIALIZACIÓN DE LA APP (CRÍTICO)
+# INICIALIZACIÓN DE LA APP
 # ==========================================
 app = FastAPI()
 
@@ -283,6 +283,7 @@ def generar_grafica_json(datos):
         margin=dict(l=60, r=40, t=50, b=50)
     )
 
+    # Configuración estricta de ejes X
     fig.update_xaxes(
         type='category',
         showgrid=True,
@@ -290,27 +291,39 @@ def generar_grafica_json(datos):
         tickfont=dict(size=10, color="#8B949E"),
         linecolor="#30363D"
     )
+
+    # Gráfica 1 (Tipo de Cambio): Activar autorange independiente para evitar línea plana
     fig.update_yaxes(
+        title_text="Pesos por dólar",
+        row=1, col=1,
+        autorange=True,
         showgrid=True,
         gridcolor='rgba(139, 148, 158, 0.08)',
         tickfont=dict(size=10, color="#8B949E"),
         linecolor="#30363D"
     )
 
-    fig.update_yaxes(title_text="Pesos por dólar", row=1, col=1)
-    fig.update_yaxes(title_text="Pesos por litro", row=2, col=1)
+    # Gráfica 2 (IEPS): Activar autorange independiente
+    fig.update_yaxes(
+        title_text="Pesos por litro",
+        row=2, col=1,
+        autorange=True,
+        showgrid=True,
+        gridcolor='rgba(139, 148, 158, 0.08)',
+        tickfont=dict(size=10, color="#8B949E"),
+        linecolor="#30363D"
+    )
 
     return fig.to_json()
 
 
 # ==========================================
-# MOTOR DEL SCRAPER (HISTÓRICO DE 12 DÍAS)
+# MOTOR DEL SCRAPER (HISTÓRICO)
 # ==========================================
 def run_scraper():
     hoy = datetime.datetime.now()
     resultados_dias = []
     
-    # Buscaremos en una ventana de 12 días para garantizar días hábiles reales
     dias_a_revisar = [hoy - datetime.timedelta(days=i) for i in range(12)]
     
     with ThreadPoolExecutor(max_workers=3) as executor:
