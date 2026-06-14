@@ -234,7 +234,7 @@ def generar_grafica_json(datos):
         rows=2, cols=1,
         shared_xaxes=False,
         vertical_spacing=0.15,
-        subplot_titles=("💱 Tipo de Cambio USD/MXN (Detalle de Volatilidad)", "⛽ IEPS Combustibles (pesos/litro)")
+        subplot_titles=("💱 Tipo de Cambio USD/MXN (Detalle de Volatilidad - Últimos 30 días)", "⛽ IEPS Combustibles (Pesos/Litro - Histórico Mensual)")
     )
 
     if puntos_tc:
@@ -247,7 +247,7 @@ def generar_grafica_json(datos):
                 mode='lines+markers',
                 name='USD/MXN',
                 line=dict(color='#58A6FF', width=2.5),
-                marker=dict(size=7),
+                marker=dict(size=6),
                 fill='tozeroy',
                 fillcolor='rgba(88, 166, 255, 0.02)'
             ),
@@ -260,17 +260,17 @@ def generar_grafica_json(datos):
         vy_premium = [p[2] for p in puntos_ieps]
         vy_diesel = [p[3] for p in puntos_ieps]
         
-        # Ajustes de Paleta de Colores solicitada: Regular (Verde), Premium (Roja), Diésel (Blanca)
+        # Paleta de colores solicitada alineada e integrada
         fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_regular, mode='lines+markers', name='Regular (<91 oct)', line=dict(color='#3FB950', width=2.5), marker=dict(size=7)),
+            gr.Scatter(x=fx_ieps, y=vy_regular, mode='lines+markers', name='Regular (<91 oct)', line=dict(color='#3FB950', width=2.5), marker=dict(size=6)),
             row=2, col=1
         )
         fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_premium, mode='lines+markers', name='Premium (≥91 oct)', line=dict(color='#FF7B72', width=2.5), marker=dict(size=7)),
+            gr.Scatter(x=fx_ieps, y=vy_premium, mode='lines+markers', name='Premium (≥91 oct)', line=dict(color='#FF7B72', width=2.5), marker=dict(size=6)),
             row=2, col=1
         )
         fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_diesel, mode='lines+markers', name='Diésel', line=dict(color='#FFFFFF', width=2.5), marker=dict(size=7)),
+            gr.Scatter(x=fx_ieps, y=vy_diesel, mode='lines+markers', name='Diésel', line=dict(color='#FFFFFF', width=2.5), marker=dict(size=6)),
             row=2, col=1
         )
 
@@ -278,7 +278,7 @@ def generar_grafica_json(datos):
         font=dict(color="#E6EDF3", family="Segoe UI, sans-serif"),
         paper_bgcolor="#0D1117",
         plot_bgcolor="#161B22",
-        height=650,
+        height=700,
         showlegend=True,
         legend=dict(bgcolor="#21262D", bordercolor="#30363D", font=dict(size=10)),
         margin=dict(l=60, r=40, t=50, b=50)
@@ -288,12 +288,13 @@ def generar_grafica_json(datos):
         type='category',
         showgrid=True,
         gridcolor='rgba(139, 148, 158, 0.08)',
-        tickfont=dict(size=10, color="#8B949E"),
-        linecolor="#30363D"
+        tickfont=dict(size=9, color="#8B949E"),
+        linecolor="#30363D",
+        tickangle=-45
     )
 
     # ========================================================
-    # CÁLCULO DE LÍMITES AJUSTADOS PARA MAXIMIZAR VOLATILIDAD
+    # CÁLCULO DE LÍMITES AJUSTADOS PARA VOLATILIDAD MENSUAL
     # ========================================================
     if puntos_tc:
         valores = [p[1] for p in puntos_tc]
@@ -337,15 +338,17 @@ def generar_grafica_json(datos):
 
 
 # ==========================================
-# MOTOR DEL SCRAPER (HISTÓRICO 12 DÍAS)
+# MOTOR DEL SCRAPER (HISTÓRICO EXTENDIDO 30 DÍAS)
 # ==========================================
 def run_scraper():
     hoy = datetime.datetime.now()
     resultados_dias = []
     
-    dias_a_revisar = [hoy - datetime.timedelta(days=i) for i in range(12)]
+    # Rango extendido a 30 días para capturar el histórico mensual completo del IEPS
+    dias_a_revisar = [hoy - datetime.timedelta(days=i) for i in range(30)]
     
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    # Se aumentan los workers máximos a 5 para acelerar las peticiones concurrentes de los 30 días
+    with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(buscar_dia, fecha): fecha for fecha in dias_a_revisar}
         for future in as_completed(futures):
             try:
@@ -419,6 +422,7 @@ def construir_respuesta(datos, desde_cache=False):
                 "variacion": calcular_variacion(datos["vals_regular"]),
             },
             "premium": {
+                "vals_premium": datos["vals_premium"], # Respaldado para cálculos internos extendidos
                 "valor": datos["vals_premium"][-1],
                 "variacion": calcular_variacion(datos["vals_premium"]),
             },
