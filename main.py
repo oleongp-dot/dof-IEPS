@@ -399,6 +399,15 @@ def construir_respuesta(datos, desde_cache=False):
         "ieps": None,
         "grafica": grafica_json,
         "desde_cache": desde_cache,
+        # INYECTAMOS EL HISTÓRICO CRUDO PARA LA DESCARGA CSV EN CLIENTE
+        "historico_raw": {
+            "fechas_tc": datos["fechas_tc"],
+            "valores_tc": datos["valores_tc"],
+            "fechas_ieps": datos["fechas_ieps"],
+            "vals_regular": datos["vals_regular"],
+            "vals_premium": datos["vals_premium"],
+            "vals_diesel": datos["vals_diesel"]
+        }
     }
 
     if datos["valores_tc"]:
@@ -409,7 +418,6 @@ def construir_respuesta(datos, desde_cache=False):
         }
 
     if datos["vals_regular"]:
-        # CORRECCIÓN EN EL DICCIONARIO DE PREMIUM PARA EVITAR ERRORES EN FRONTEND
         resultado["ieps"] = {
             "vigencia": datos["ultima_vigencia"],
             "regular": {
