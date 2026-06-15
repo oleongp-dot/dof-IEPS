@@ -3,194 +3,263 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DOF Monitor Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <title>DOF Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
-        body { background-color: #0D1117; color: #E6EDF3; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+        body {
+            background-color: #0D1117;
+            color: #E6EDF3;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+        .card {
+            background-color: #161B22;
+            border: 1px solid #30363D;
+            border-radius: 6px;
+        }
+        .badge-sube { color: #58A6FF; }
+        .badge-baja { color: #FF7B72; }
+        .badge-neutral { color: #8B949E; }
     </style>
 </head>
-<body class="p-4 md:p-8 max-w-6xl mx-auto">
+<body class="p-4 md:p-8">
 
-    <header class="border-b border-[#30363D] pb-4 mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-            <h1 class="text-2xl font-bold flex items-center gap-2 text-[#58A6FF]">
-                📊 DOF Monitor <span class="text-xs bg-[#21262D] text-[#8B949E] px-2 py-0.5 rounded-full border border-[#30363D]">v2.0</span>
-            </h1>
-            <p class="text-sm text-[#8B949E] mt-1">Automatización financiera y consulta interactiva del Diario Oficial</p>
-        </div>
-        <div class="text-right text-xs text-[#8B949E]">
-            <p>Última Consulta: <span id="txt-fecha-consulta" class="text-[#E6EDF3] font-mono">Cargando...</span></p>
-            <p class="mt-1">Origen de Datos: <span id="txt-cache-status" class="font-semibold">...</span></p>
-        </div>
-    </header>
+    <div id="area-reporte" class="max-w-6xl mx-auto p-4 bg-[#0D1117] rounded-xl">
+        
+        <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#30363D] pb-4 mb-6 gap-4">
+            <div class="flex items-center gap-3">
+                <span class="text-3xl">📊</span>
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight text-[#F0F6FC]">DOF Monitor</h1>
+                    <p class="text-[10px] text-[#8B949E] uppercase tracking-widest" id="fecha-consulta">Sincronizando...</p>
+                </div>
+            </div>
+            <div class="flex gap-2" id="controles-principales">
+                <button id="btn-screenshot" onclick="generarCapturaSegura()" class="bg-[#21262D] hover:bg-[#30363D] text-[#C9D1D9] border border-[#30363D] font-medium text-xs px-3 py-2 rounded transition flex items-center gap-2">
+                    📸 Reporte (PNG)
+                </button>
+                <button id="btn-actualizar" onclick="consultarAPI(true)" class="bg-[#238636] hover:bg-[#2EA043] text-white font-medium text-xs px-3 py-2 rounded transition">
+                    Actualizar
+                </button>
+            </div>
+        </header>
 
-    <main class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div class="bg-[#161B22] border border-[#30363D] p-4 rounded-lg">
-            <div class="text-xs text-[#8B949E] font-medium uppercase tracking-wider">USD / MXN</div>
-            <div id="kpi-tc-valor" class="text-2xl font-bold font-mono mt-1 text-[#58A6FF]">-$--</div>
-            <div id="kpi-tc-var" class="text-xs mt-2 font-medium flex items-center gap-1">--</div>
-            <div id="kpi-tc-fecha" class="text-[10px] text-[#8B949E] font-mono mt-1">Fecha DOF: --</div>
-        </div>
-        <div class="bg-[#161B22] border border-[#30363D] p-4 rounded-lg">
-            <div class="text-xs text-[#8B949E] font-medium uppercase tracking-wider">IEPS Regular (&lt;91 oct)</div>
-            <div id="kpi-reg-valor" class="text-2xl font-bold font-mono mt-1 text-[#3FB950]">-$--</div>
-            <div id="kpi-reg-var" class="text-xs mt-2 font-medium flex items-center gap-1">--</div>
-            <div class="kpi-vigencia text-[10px] text-[#8B949E] font-mono mt-1">Vigencia: --</div>
-        </div>
-        <div class="bg-[#161B22] border border-[#30363D] p-4 rounded-lg">
-            <div class="text-xs text-[#8B949E] font-medium uppercase tracking-wider">IEPS Premium (&ge;91 oct)</div>
-            <div id="kpi-prem-valor" class="text-2xl font-bold font-mono mt-1 text-[#FF7B72]">-$--</div>
-            <div id="kpi-prem-var" class="text-xs mt-2 font-medium flex items-center gap-1">--</div>
-            <div class="kpi-vigencia text-[10px] text-[#8B949E] font-mono mt-1">Vigencia: --</div>
-        </div>
-        <div class="bg-[#161B22] border border-[#30363D] p-4 rounded-lg">
-            <div class="text-xs text-[#8B949E] font-medium uppercase tracking-wider">IEPS Diésel</div>
-            <div id="kpi-die-valor" class="text-2xl font-bold font-mono mt-1 text-[#FFFFFF]">-$--</div>
-            <div id="kpi-die-var" class="text-xs mt-2 font-medium flex items-center gap-1">--</div>
-            <div class="kpi-vigencia text-[10px] text-[#8B949E] font-mono mt-1">Vigencia: --</div>
-        </div>
-    </main>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="card p-4 flex flex-col justify-between min-h-[110px]">
+                <div>
+                    <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">💱 Tipo de Cambio</p>
+                    <h2 class="text-2xl font-bold mt-1 text-[#F0F6FC]" id="val-tc">--</h2>
+                </div>
+                <p class="text-xs font-mono mt-2" id="var-tc">--</p>
+            </div>
 
-    <section class="bg-[#161B22] border border-[#30363D] rounded-lg p-4">
-        <div class="flex flex-wrap gap-2 justify-end mb-4 border-b border-[#30363D] pb-3">
-            <span class="text-xs text-[#8B949E] self-center mr-2 font-medium">Exportar Histórico Crudo:</span>
-            <button onclick="descargarCSV('tc')" class="bg-[#21262D] hover:bg-[#30363D] text-[#E6EDF3] border border-[#30363D] px-3 py-1.5 rounded-md text-xs flex items-center gap-1.5 transition">
-                💱 Descargar TC (.csv)
+            <div class="card p-4 flex flex-col justify-between min-h-[110px]">
+                <div>
+                    <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Regular (<91 OCT)</p>
+                    <div class="flex items-baseline gap-2 mt-1">
+                        <h2 class="text-2xl font-bold text-[#F0F6FC]" id="val-regular">--</h2>
+                        <span class="text-[10px] font-semibold text-[#8B949E]" id="cpg-regular"></span>
+                    </div>
+                </div>
+                <p class="text-xs font-mono mt-2" id="var-regular">--</p>
+            </div>
+
+            <div class="card p-4 flex flex-col justify-between min-h-[110px]">
+                <div>
+                    <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Premium</p>
+                    <div class="flex items-baseline gap-2 mt-1">
+                        <h2 class="text-2xl font-bold text-[#F0F6FC]" id="val-premium">--</h2>
+                        <span class="text-[10px] font-semibold text-[#8B949E]" id="cpg-premium"></span>
+                    </div>
+                </div>
+                <p class="text-xs font-mono mt-2" id="var-premium">--</p>
+            </div>
+
+            <div class="card p-4 flex flex-col justify-between min-h-[110px]">
+                <div>
+                    <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Diésel</p>
+                    <div class="flex items-baseline gap-2 mt-1">
+                        <h2 class="text-2xl font-bold text-[#F0F6FC]" id="val-diesel">--</h2>
+                        <span class="text-[10px] font-semibold text-[#8B949E]" id="cpg-diesel"></span>
+                    </div>
+                </div>
+                <p class="text-xs font-mono mt-2" id="var-diesel">--</p>
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-2 mb-4 border-b border-[#30363D] pb-3" id="controles-csv">
+            <span class="text-[10px] text-[#8B949E] self-center mr-2 font-bold uppercase">Descargar Datos Crudos:</span>
+            <button onclick="descargarCSV('tc')" class="text-[#8B949E] hover:text-[#E6EDF3] text-[10px] border border-[#30363D] px-2 py-1 rounded transition flex items-center gap-1">
+                📥 TC (.csv)
             </button>
-            <button onclick="descargarCSV('ieps')" class="bg-[#21262D] hover:bg-[#30363D] text-[#E6EDF3] border border-[#30363D] px-3 py-1.5 rounded-md text-xs flex items-center gap-1.5 transition">
-                ⛽ Descargar IEPS (.csv)
+            <button onclick="descargarCSV('ieps')" class="text-[#8B949E] hover:text-[#E6EDF3] text-[10px] border border-[#30363D] px-2 py-1 rounded transition flex items-center gap-1">
+                📥 IEPS (.csv)
             </button>
         </div>
 
-        <div id="grafica-container" class="w-full min-h-[700px] flex items-center justify-center">
-            <div class="text-sm text-[#8B949E] animate-pulse">Sincronizando con el Diario Oficial de la Federación...</div>
-        </div>
-    </section>
+        <main id="bloque-grafica" class="card p-4 min-h-[400px] flex flex-col justify-center relative">
+            <div id="loading-overlay" class="absolute inset-0 bg-[#0D1117]/80 flex flex-col items-center justify-center gap-3 z-10 rounded">
+                <div class="animate-spin rounded-full h-8 w-8 border-4 border-[#30363D] border-t-[#58A6FF]"></div>
+                <p class="text-xs text-[#8B949E]">Consultando Diario Oficial...</p>
+            </div>
+            <div id="contenedor-grafica" class="w-full"></div>
+        </main>
+    </div>
 
     <script>
-        // Almacén en memoria del cliente para evitar llamadas redundantes
-        let cacheDatosLocales = null;
+        let cacheLocalRaw = null;
 
-        async function cargarDashboard() {
-            try {
-                const respuesta = await fetch('/api/consultar');
-                const datos = await respuesta.json();
-                cacheDatosLocales = datos; // Guardamos una copia local para los descargadores
-
-                // 1. Metadatos de cabecera
-                document.getElementById('txt-fecha-consulta').innerText = datos.fecha_consulta;
-                const statusCache = document.getElementById('txt-cache-status');
-                if (datos.desde_cache) {
-                    statusCache.innerText = "Caché Interna (30 min)";
-                    statusCache.className = "text-[#3FB950] font-semibold";
-                } else {
-                    statusCache.innerText = "Actualizado en Vivo";
-                    statusCache.className = "text-[#58A6FF] font-semibold";
-                }
-
-                // 2. Inyección de KPIs: Tipo de Cambio
-                if (datos.tipo_cambio) {
-                    document.getElementById('kpi-tc-valor').innerText = `$${datos.tipo_cambio.valor.toFixed(4)}`;
-                    document.getElementById('kpi-tc-fecha').innerText = `Fecha DOF: ${datos.tipo_cambio.fecha}`;
-                    renderizarVariacion('kpi-tc-var', datos.tipo_cambio.variacion);
-                }
-
-                // 3. Inyección de KPIs: Estructuras IEPS
-                if (datos.ieps) {
-                    document.getElementById('kpi-reg-valor').innerText = `$${datos.ieps.regular.valor.toFixed(4)}`;
-                    renderizarVariacion('kpi-reg-var', datos.ieps.regular.variacion);
-
-                    document.getElementById('kpi-prem-valor').innerText = `$${datos.ieps.premium.valor.toFixed(4)}`;
-                    renderizarVariacion('kpi-prem-var', datos.ieps.premium.variacion);
-
-                    document.getElementById('kpi-die-valor').innerText = `$${datos.ieps.diesel.valor.toFixed(4)}`;
-                    renderizarVariacion('kpi-die-var', datos.ieps.diesel.variacion);
-
-                    // Actualizar etiquetas de vigencia colectiva
-                    const elementosVigencia = document.getElementsByClassName('kpi-vigencia');
-                    for (let elem of elementosVigencia) {
-                        elem.innerText = `Vigencia: ${datos.ieps.vigencia}`;
-                    }
-                }
-
-                // 4. Renderizado de Gráfica Plotly
-                if (datos.grafica) {
-                    const graficaObjeto = JSON.parse(datos.grafica);
-                    document.getElementById('grafica-container').innerHTML = ''; // Limpiamos cargador
-                    Plotly.newPlot('grafica-container', graficaObjeto.data, graficaObjeto.layout, {responsive: true, displayModeBar: false});
-                } else {
-                    document.getElementById('grafica-container').innerHTML = '<div class="text-sm text-[#FF7B72]">Error al construir la visualización de datos.</div>';
-                }
-
-            } catch (error) {
-                console.error(error);
-                document.getElementById('grafica-container').innerHTML = '<div class="text-sm text-[#FF7B72]">Error de conexión con la API del servidor.</div>';
+        function mapearEstiloVariacion(elementoId, variacion) {
+            const el = document.getElementById(elementoId);
+            if (!variacion) {
+                el.className = "text-xs font-mono mt-2 badge-neutral";
+                el.innerText = "--";
+                return;
             }
-        }
-
-        function renderizarVariacion(idElemento, objetoVariacion) {
-            const contenedor = document.getElementById(idElemento);
-            contenedor.innerText = objetoVariacion.texto;
-            if (objetoVariacion.tipo === 'sube') {
-                contenedor.className = "text-xs mt-2 font-medium flex items-center gap-1 text-[#FF7B72]";
-            } else if (objetoVariacion.tipo === 'baja') {
-                contenedor.className = "text-xs mt-2 font-medium flex items-center gap-1 text-[#3FB950]";
+            el.innerText = variacion.texto;
+            if (variacion.tipo === "sube") {
+                el.className = "text-xs font-mono mt-2 badge-sube";
+            } else if (variacion.tipo === "baja") {
+                el.className = "text-xs font-mono mt-2 badge-baja";
             } else {
-                contenedor.className = "text-xs mt-2 font-medium flex items-center gap-1 text-[#8B949E]";
+                el.className = "text-xs font-mono mt-2 badge-neutral";
             }
         }
 
-        // MOTOR DE DESCARGA DIRECTA DE ARCHIVOS CSV (CLIENT-SIDE)
-        function descargarCSV(tipo) {
-            if (!cacheDatosLocales || !cacheDatosLocales.historico_raw) {
-                return alert("Espera a que los datos se carguen por completo.");
+        function calcularEInyectarCPG(elementoId, valorMxnLitro, tipoCambio) {
+            if (valorMxnLitro && tipoCambio && tipoCambio > 0) {
+                const cpg = (valorMxnLitro / tipoCambio) * 3.78541 * 100;
+                document.getElementById(elementoId).innerText = `/ ${cpg.toFixed(1)} cpg`;
             }
+        }
+
+        function calcularVariacionCPG(elementoId, variacionObjeto, tipoCambio) {
+            const el = document.getElementById(elementoId);
+            if (!variacionObjeto || !variacionObjeto.texto || !tipoCambio || tipoCambio <= 0) return;
+            if (variacionObjeto.tipo === "neutral") return;
+
+            const coincidencia = variacionObjeto.texto.match(/[0-9.]+/);
+            if (coincidencia) {
+                const valorMxn = parseFloat(coincidencia[0]);
+                const cpgVar = (valorMxn / tipoCambio) * 3.78541 * 100;
+                const signo = variacionObjeto.tipo === "sube" ? "+" : "-";
+                el.innerText = `${variacionObjeto.texto} (${signo}${cpgVar.toFixed(1)} cpg)`;
+            }
+        }
+
+        async function consultarAPI(forzar = false) {
+            const overlay = document.getElementById('loading-overlay');
+            const btnAct = document.getElementById('btn-actualizar');
             
-            const raw = cacheDatosLocales.historico_raw;
-            let contenidoCsv = "";
-            let nombreArchivo = "";
+            overlay.classList.remove('hidden');
+            btnAct.disabled = true;
+
+            try {
+                const url = forzar ? '/api/consultar?force=true' : '/api/consultar';
+                const res = await fetch(url);
+                const data = await res.json();
+                cacheLocalRaw = data;
+
+                document.getElementById('fecha-consulta').innerText = 
+                    `Sincronización: ${data.fecha_consulta} ${data.desde_cache ? '(Caché)' : '(Vivo)'}`;
+
+                let tcActual = 0;
+                if (data.tipo_cambio) {
+                    tcActual = data.tipo_cambio.valor;
+                    document.getElementById('val-tc').innerText = `$${tcActual.toFixed(4)}`;
+                    mapearEstiloVariacion('var-tc', data.tipo_cambio.variacion);
+                }
+
+                if (data.ieps) {
+                    const fuels = ['regular', 'premium', 'diesel'];
+                    fuels.forEach(f => {
+                        if (data.ieps[f]) {
+                            document.getElementById(`val-${f}`).innerText = `$${data.ieps[f].valor.toFixed(4)}`;
+                            mapearEstiloVariacion(`var-${f}`, data.ieps[f].variacion);
+                            calcularEInyectarCPG(`cpg-${f}`, data.ieps[f].valor, tcActual);
+                            calcularVariacionCPG(`var-${f}`, data.ieps[f].variacion, tcActual);
+                        }
+                    });
+                }
+
+                if (data.grafica) {
+                    const config = { responsive: true, displayModeBar: true, displaylogo: false };
+                    Plotly.newPlot('contenedor-grafica', JSON.parse(data.grafica).data, JSON.parse(data.grafica).layout, config);
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                overlay.classList.add('hidden');
+                btnAct.disabled = false;
+            }
+        }
+
+        // CAPTURA DE PANTALLA PANORÁMICA BLINDADA
+        function generarCapturaSegura() {
+            const nodeGraf = document.getElementById('contenedor-grafica');
+            const bloqueGraf = document.getElementById('bloque-grafica');
+            const btnScr = document.getElementById('btn-screenshot');
+
+            btnScr.innerText = "📸 Capturando...";
+            btnScr.disabled = true;
+
+            Plotly.toImage(nodeGraf, { format: 'png', height: 700, width: 1100, scale: 2 })
+                .then(dataUrl => {
+                    const img = document.createElement('img');
+                    img.src = dataUrl;
+                    img.className = "w-full h-auto";
+
+                    const backup = nodeGraf;
+                    bloqueGraf.innerHTML = '';
+                    bloqueGraf.appendChild(img);
+
+                    // Ocultar botones para la foto
+                    document.getElementById('controles-principales').style.visibility = 'hidden';
+                    document.getElementById('controles-csv').style.visibility = 'hidden';
+
+                    html2canvas(document.getElementById('area-reporte'), { backgroundColor: '#0D1117', scale: 2 })
+                    .then(canvas => {
+                        const link = document.createElement('a');
+                        link.download = `Reporte_DOF_${new Date().toISOString().slice(0,10)}.png`;
+                        link.href = canvas.toDataURL();
+                        link.click();
+
+                        bloqueGraf.innerHTML = '';
+                        bloqueGraf.appendChild(backup);
+                        document.getElementById('controles-principales').style.visibility = 'visible';
+                        document.getElementById('controles-csv').style.visibility = 'visible';
+                        btnScr.innerText = "📸 Reporte (PNG)";
+                        btnScr.disabled = false;
+                    });
+                });
+        }
+
+        // DESCARGA CSV (DATOS CRUDOS)
+        function descargarCSV(tipo) {
+            if (!cacheLocalRaw || !cacheLocalRaw.historico_raw) return alert("Cargando datos...");
+            const raw = cacheLocalRaw.historico_raw;
+            let csv = "\ufeff";
+            let filename = "";
 
             if (tipo === 'tc') {
-                contenidoCsv = "\ufeffFecha,Tipo de Cambio USD/MXN\n";
-                nombreArchivo = `dof_historico_tc_${new Date().toISOString().split('T')[0]}.csv`;
-                
-                const fechas = raw.fechas_tc || [];
-                const valores = raw.valores_tc || [];
-                
-                fechas.forEach((f, i) => {
-                    contenidoCsv += `${f},${valores[i]}\n`;
-                });
-            } else if (tipo === 'ieps') {
-                contenidoCsv = "\ufeffFecha,IEPS Regular (Magna),IEPS Premium,IEPS Diesel\n";
-                nombreArchivo = `dof_historico_ieps_${new Date().toISOString().split('T')[0]}.csv`;
-                
-                const fechas = raw.fechas_ieps || [];
-                const reg = raw.vals_regular || [];
-                const prem = raw.vals_premium || [];
-                const die = raw.vals_diesel || [];
-                
-                fechas.forEach((f, i) => {
-                    contenidoCsv += `${f},${reg[i] || 0},${prem[i] || 0},${die[i] || 0}\n`;
-                });
+                csv += "Fecha,Tipo de Cambio USD/MXN\n";
+                filename = "dof_tc_historico.csv";
+                raw.fechas_tc.forEach((f, i) => csv += `${f},${raw.valores_tc[i]}\n`);
+            } else {
+                csv += "Fecha,Regular,Premium,Diesel\n";
+                filename = "dof_ieps_historico.csv";
+                raw.fechas_ieps.forEach((f, i) => csv += `${f},${raw.vals_regular[i]},${raw.vals_premium[i]},${raw.vals_diesel[i]}\n`);
             }
 
-            // Forzar descarga nativa mediante un Blob seguro
-            const blob = new Blob([contenidoCsv], { type: 'text/csv;charset=utf-8;' });
-            const enlaceOculto = document.createElement("a");
-            const urlDescarga = URL.createObjectURL(blob);
-            
-            enlaceOculto.setAttribute("href", urlDescarga);
-            enlaceOculto.setAttribute("download", nombreArchivo);
-            enlaceOculto.style.visibility = 'hidden';
-            
-            document.body.appendChild(enlaceOculto);
-            enlaceOculto.click();
-            document.body.removeChild(enlaceOculto);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
         }
 
-        // Evento de inicio automatizado
-        window.onload = cargarDashboard;
+        window.onload = () => consultarAPI(false);
     </script>
 </body>
 </html>
