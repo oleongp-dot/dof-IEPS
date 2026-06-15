@@ -230,7 +230,6 @@ def generar_grafica_json(datos):
     if not puntos_tc and not puntos_ieps:
         return None
 
-    # Título limpio del Tipo de Cambio aplicado aquí
     fig = make_subplots(
         rows=2, cols=1,
         shared_xaxes=False,
@@ -410,6 +409,7 @@ def construir_respuesta(datos, desde_cache=False):
         }
 
     if datos["vals_regular"]:
+        # CORRECCIÓN EN EL DICCIONARIO DE PREMIUM PARA EVITAR ERRORES EN FRONTEND
         resultado["ieps"] = {
             "vigencia": datos["ultima_vigencia"],
             "regular": {
@@ -417,7 +417,6 @@ def construir_respuesta(datos, desde_cache=False):
                 "variacion": calcular_variacion(datos["vals_regular"]),
             },
             "premium": {
-                "vals_premium": datos["vals_premium"],
                 "valor": datos["vals_premium"][-1],
                 "variacion": calcular_variacion(datos["vals_premium"]),
             },
@@ -452,5 +451,3 @@ async def consultar(force: bool = False):
     datos = await run_in_threadpool(run_scraper)
     resultado = await run_in_threadpool(construir_respuesta, datos, False)
     return JSONResponse(content=resultado)
-
-
