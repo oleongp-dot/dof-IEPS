@@ -83,6 +83,26 @@ def extraer_ieps(url, fecha_str):
                 vigencia.group(1).strip() if vigencia else "No disponible"
             )
 
+            # --- PROCESAMIENTO NUEVO: OBTENER EL DÍA DE INICIO DE VIGENCIA ---
+            fecha_inicio_vigencia = fecha_str  # Respaldo en caso de error
+            if vigencia:
+                texto_vigencia = vigencia.group(1).lower()
+                meses = {
+                    "enero": "01", "febrero": "02", "marzo": "03", "abril": "04",
+                    "mayo": "05", "junio": "06", "julio": "07", "agosto": "08",
+                    "septiembre": "09", "octubre": "10", "noviembre": "11", "diciembre": "12"
+                }
+                # Buscar un patrón numérico seguido de un mes ("27 de junio")
+                match_fecha = re.search(r"(\d{1,2})\s+de\s+([a-z]+)", texto_vigencia)
+                if match_fecha:
+                    dia_v = match_fecha.group(1).zfill(2)
+                    mes_v = meses.get(match_fecha.group(2), "01")
+                    # Extraer el año del final de la vigencia (ej: "2026")
+                    match_anio = re.search(r"(\d{4})", texto_vigencia)
+                    anio_v = match_anio.group(1) if match_anio else fecha_str.split("/")[-1]
+                    fecha_inicio_vigencia = f"{dia_v}/{mes_v}/{anio_v}"
+            # -----------------------------------------------------------------
+
             patrones = {
                 "regular": r"Gasolina\s+menor\s+a\s+91\s+octanos\s+(\$[\d.]+)",
                 "premium": r"Gasolina\s+mayor\s+o\s+igual\s+a\s+91\s+octanos.*?(\$[\d.]+)",
@@ -98,6 +118,7 @@ def extraer_ieps(url, fecha_str):
             if len(valores) == 3:
                 return {
                     "fecha": fecha_str,
+                    "fecha_vigencia": fecha_inicio_vigencia,  # <-- Inyectamos la nueva fecha procesada
                     "vigencia": vigencia_str,
                     **valores,
                 }
@@ -352,8 +373,15 @@ def run_scraper():
             except Exception:
                 pass
 
+    # --- MODIFICADO: EL ORDENAMIENTO DEBE HACERSE CON LA FECHA DE VIGENCIA ---
+    # Para ordenar correctamente el histórico mezclado en la línea del tiempo
+    def obtener_fecha_orden(x):
+        if x.get("ieps") and x["ieps"].get("fecha_vigencia"):
+            return datetime.datetime.strptime(x["ieps"]["fecha_vigencia"], "%d/%m/%Y")
+        return datetime.datetime.strptime(x["fecha"], "%d/%m/%Y")
+
     try:
-        resultados_dias.sort(key=lambda x: datetime.datetime.strptime(x["fecha"], "%d/%m/%Y"))
+        resultados_dias.sort(key=obtener_fecha_orden)
     except:
         pass
 
@@ -369,7 +397,10 @@ def run_scraper():
             ultima_fecha_tc = dia["tc"]["fecha"]
             
         if dia.get("ieps") and dia["ieps"].get("regular"):
-            fechas_ieps.append(dia["ieps"]["fecha"])
+            # --- CAMBIO AQUÍ: GUARDAMOS LA FECHA DE INICIO DE VIGENCIA EN LA LISTA ---
+            f_ieps = dia["ieps"].get("fecha_vigencia", dia["ieps"]["fecha"])
+            fechas_ieps.append(f_ieps)
+            # ------------------------------------------------------------------------
             vals_regular.append(dia["ieps"]["regular"])
             vals_premium.append(dia["ieps"]["premium"])
             vals_diesel.append(dia["ieps"]["diesel"])
@@ -399,7 +430,6 @@ def construir_respuesta(datos, desde_cache=False):
         "ieps": None,
         "grafica": grafica_json,
         "desde_cache": desde_cache,
-        # INYECTAMOS EL HISTÓRICO CRUDO PARA LA DESCARGA CSV EN CLIENTE
         "historico_raw": {
             "fechas_tc": datos["fechas_tc"],
             "valores_tc": datos["valores_tc"],
