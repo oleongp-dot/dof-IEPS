@@ -60,8 +60,27 @@ def obtener_cache():
 
 
 # ==========================================
-# SCRAPERS DE EXTRACCIÓN
+# SCRAPERS DE EXTRACCIÓN Y PROCESAMIENTO
 # ==========================================
+def parsear_fecha_texto(texto_fecha, anio_respaldo):
+    """Convierte cadenas como '27 de junio' o '03 de julio de 2026' a objeto datetime"""
+    meses = {
+        "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+        "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12
+    }
+    try:
+        texto_fecha = texto_fecha.lower().strip()
+        match = re.search(r"(\d{1,2})\s+de\s+([a-z]+)(?:\s+de\s+(\d{4}))?", texto_fecha)
+        if match:
+            dia = int(match.group(1))
+            mes = meses.get(match.group(2), 1)
+            anio = int(match.group(3)) if match.group(3) else int(anio_respaldo)
+            return datetime.datetime(anio, mes, dia)
+    except:
+        pass
+    return None
+
+
 def extraer_ieps(url, fecha_str):
     try:
         respuesta = requests.get(url, headers=headers, verify=False, timeout=8)
@@ -77,11 +96,22 @@ def extraer_ieps(url, fecha_str):
             bloque = texto[inicio : inicio + 1200]
 
             vigencia = re.search(
-                r"periodo comprendido del (.+?\d{4})", bloque, re.IGNORECASE
+                r"periodo comprendido del (.+?)\s+al\s+(.+?\d{4})", bloque, re.IGNORECASE
             )
-            vigencia_str = (
-                vigencia.group(1).strip() if vigencia else "No disponible"
-            )
+            
+            vigencia_str = "No disponible"
+            fecha_fin_real = None
+            
+            if vigencia:
+                texto_inicio = vigencia.group(1).strip()
+                texto_fin = vigencia.group(2).strip()
+                vigencia_str = f"del {texto_inicio} al {texto_fin}"
+                
+                # Intentamos extraer el año de la publicación base
+                anio_base = fecha_str.split("/")[-1]
+                fecha_fin_real_dt = parsear_fecha_texto(texto_fin, anio_base)
+                if fecha_fin_real_dt:
+                    fecha_fin_real = fecha_fin_real_dt.strftime("%d/%m/%Y")
 
             patrones = {
                 "regular": r"Gasolina\s+menor\s+a\s+91\s+octanos\s+(\$[\d.]+)",
@@ -99,6 +129,7 @@ def extraer_ieps(url, fecha_str):
                 return {
                     "fecha": fecha_str,
                     "vigencia": vigencia_str,
+                    "fecha_fin_real": fecha_fin_real,  # <-- Guardamos la fecha exacta del DOF
                     **valores,
                 }
     except:
@@ -208,6 +239,7 @@ def generar_grafica_json(datos):
     vals_regular = datos.get("vals_regular", [])
     vals_premium = datos.get("vals_premium", [])
     vals_diesel = datos.get("vals_diesel", [])
+    fechas_fin_ieps = datos.get("fechas_fin_ieps", []) # Nueva lista enviada por el Scraper
 
     puntos_tc = []
     for f, v in zip(fechas_tc, valores_tc):
@@ -219,20 +251,31 @@ def generar_grafica_json(datos):
     puntos_tc.sort(key=lambda x: x[0])
 
     puntos_ieps = []
-    for f, m, p, d in zip(fechas_ieps, vals_regular, vals_premium, vals_diesel):
+    for f, f_fin, m, p, d in zip(fechas_ieps, fechas_fin_ieps, vals_regular, vals_premium, vals_diesel):
         try:
             f_date = datetime.datetime.strptime(f, "%d/%m/%Y")
             
-            # --- CORRECCIÓN INTERACTIVA: Si es viernes (weekday == 4), sumamos 1 día para pasar a sábado ---
+            # Si es viernes (weekday == 4), pasamos a sábado por inicio de vigencia
             if f_date.weekday() == 4:
                 f_date = f_date + datetime.timedelta(days=1)
                 
-            puntos_ieps.append((f_date, m, p, d))
+            puntos_ieps.append((f_date, f_fin, m, p, d))
         except:
             continue
             
-    # Volvemos a ordenar cronológicamente asegurando una línea de tiempo continua y correcta
     puntos_ieps.sort(key=lambda x: x[0])
+
+    # --- ENFOQUE REALISTA: Extender el escalón final usando la fecha de fin leída del DOF ---
+    if puntos_ieps and puntos_ieps[-1][1]:
+        try:
+            ff_str = puntos_ieps[-1][1]
+            dt_fin_real = datetime.datetime.strptime(ff_str, "%d/%m/%Y")
+            ult_m, ult_p, ult_d = puntos_ieps[-1][2], puntos_ieps[-1][3], puntos_ieps[-1][4]
+            # Agregamos el punto de cierre exacto del decreto
+            puntos_ieps.append((dt_fin_real, ff_str, ult_m, ult_p, ult_d))
+        except:
+            pass
+    # ----------------------------------------------------------------------------------------
 
     if not puntos_tc and not puntos_ieps:
         return None
@@ -263,20 +306,38 @@ def generar_grafica_json(datos):
 
     if puntos_ieps:
         fx_ieps = [p[0].strftime("%Y-%m-%d") for p in puntos_ieps]
-        vy_regular = [p[1] for p in puntos_ieps]
-        vy_premium = [p[2] for p in puntos_ieps]
-        vy_diesel = [p[3] for p in puntos_ieps]
+        vy_regular = [p[2] for p in puntos_ieps]
+        vy_premium = [p[3] for p in puntos_ieps]
+        vy_diesel = [p[4] for p in puntos_ieps]
         
         fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_regular, mode='lines+markers', name='Regular (<91 oct)', line=dict(color='#3FB950', width=2.5), marker=dict(size=6)),
+            gr.Scatter(
+                x=fx_ieps, y=vy_regular, 
+                mode='lines+markers', 
+                name='Regular (<91 oct)', 
+                line=dict(color='#3FB950', width=2.5, shape='hv'), 
+                marker=dict(size=6)
+            ),
             row=2, col=1
         )
         fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_premium, mode='lines+markers', name='Premium (≥91 oct)', line=dict(color='#FF7B72', width=2.5), marker=dict(size=6)),
+            gr.Scatter(
+                x=fx_ieps, y=vy_premium, 
+                mode='lines+markers', 
+                name='Premium (≥91 oct)', 
+                line=dict(color='#FF7B72', width=2.5, shape='hv'), 
+                marker=dict(size=6)
+            ),
             row=2, col=1
         )
         fig.add_trace(
-            gr.Scatter(x=fx_ieps, y=vy_diesel, mode='lines+markers', name='Diésel', line=dict(color='#FFFFFF', width=2.5), marker=dict(size=6)),
+            gr.Scatter(
+                x=fx_ieps, y=vy_diesel, 
+                mode='lines+markers', 
+                name='Diésel', 
+                line=dict(color='#FFFFFF', width=2.5, shape='hv'), 
+                marker=dict(size=6)
+            ),
             row=2, col=1
         )
 
@@ -320,7 +381,7 @@ def generar_grafica_json(datos):
     if puntos_ieps:
         todos_ieps = []
         for p in puntos_ieps:
-            todos_ieps.extend([p[1], p[2], p[3]])
+            todos_ieps.extend([p[2], p[3], p[4]])
         min_ieps = min(todos_ieps)
         max_ieps = max(todos_ieps)
         margen_ieps = max((max_ieps - min_ieps) * 0.05, 0.05)
@@ -365,7 +426,7 @@ def run_scraper():
         pass
 
     fechas_tc, valores_tc = [], []
-    fechas_ieps, vals_regular, vals_premium, vals_diesel = [], [], [], []
+    fechas_ieps, fechas_fin_ieps, vals_regular, vals_premium, vals_diesel = [], [], [], [], []
     ultima_fecha_tc = "No disponible"
     ultima_vigencia = "No disponible"
 
@@ -377,6 +438,7 @@ def run_scraper():
             
         if dia.get("ieps") and dia["ieps"].get("regular"):
             fechas_ieps.append(dia["ieps"]["fecha"])
+            fechas_fin_ieps.append(dia["ieps"].get("fecha_fin_real")) # Registramos el fin de vigencia real leído
             vals_regular.append(dia["ieps"]["regular"])
             vals_premium.append(dia["ieps"]["premium"])
             vals_diesel.append(dia["ieps"]["diesel"])
@@ -387,6 +449,7 @@ def run_scraper():
         "fechas_tc": fechas_tc,
         "valores_tc": valores_tc,
         "fechas_ieps": fechas_ieps,
+        "fechas_fin_ieps": fechas_fin_ieps,
         "vals_regular": vals_regular,
         "vals_premium": vals_premium,
         "vals_diesel": vals_diesel,
