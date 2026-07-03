@@ -63,7 +63,6 @@ def obtener_cache():
 # SCRAPERS DE EXTRACCIÓN Y PROCESAMIENTO
 # ==========================================
 def parsear_fecha_texto(texto_fecha, anio_respaldo):
-    """Convierte cadenas como '27 de junio' o '03 de julio de 2026' a objeto datetime"""
     meses = {
         "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
         "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12
@@ -107,7 +106,6 @@ def extraer_ieps(url, fecha_str):
                 texto_fin = vigencia.group(2).strip()
                 vigencia_str = f"del {texto_inicio} al {texto_fin}"
                 
-                # Intentamos extraer el año de la publicación base
                 anio_base = fecha_str.split("/")[-1]
                 fecha_fin_real_dt = parsear_fecha_texto(texto_fin, anio_base)
                 if fecha_fin_real_dt:
@@ -129,7 +127,7 @@ def extraer_ieps(url, fecha_str):
                 return {
                     "fecha": fecha_str,
                     "vigencia": vigencia_str,
-                    "fecha_fin_real": fecha_fin_real,  # <-- Guardamos la fecha exacta del DOF
+                    "fecha_fin_real": fecha_fin_real,
                     **valores,
                 }
     except:
@@ -239,7 +237,7 @@ def generar_grafica_json(datos):
     vals_regular = datos.get("vals_regular", [])
     vals_premium = datos.get("vals_premium", [])
     vals_diesel = datos.get("vals_diesel", [])
-    fechas_fin_ieps = datos.get("fechas_fin_ieps", []) # Nueva lista enviada por el Scraper
+    fechas_fin_ieps = datos.get("fechas_fin_ieps", [])
 
     puntos_tc = []
     for f, v in zip(fechas_tc, valores_tc):
@@ -254,28 +252,22 @@ def generar_grafica_json(datos):
     for f, f_fin, m, p, d in zip(fechas_ieps, fechas_fin_ieps, vals_regular, vals_premium, vals_diesel):
         try:
             f_date = datetime.datetime.strptime(f, "%d/%m/%Y")
-            
-            # Si es viernes (weekday == 4), pasamos a sábado por inicio de vigencia
             if f_date.weekday() == 4:
                 f_date = f_date + datetime.timedelta(days=1)
-                
             puntos_ieps.append((f_date, f_fin, m, p, d))
         except:
             continue
             
     puntos_ieps.sort(key=lambda x: x[0])
 
-    # --- ENFOQUE REALISTA: Extender el escalón final usando la fecha de fin leída del DOF ---
     if puntos_ieps and puntos_ieps[-1][1]:
         try:
             ff_str = puntos_ieps[-1][1]
             dt_fin_real = datetime.datetime.strptime(ff_str, "%d/%m/%Y")
             ult_m, ult_p, ult_d = puntos_ieps[-1][2], puntos_ieps[-1][3], puntos_ieps[-1][4]
-            # Agregamos el punto de cierre exacto del decreto
             puntos_ieps.append((dt_fin_real, ff_str, ult_m, ult_p, ult_d))
         except:
             pass
-    # ----------------------------------------------------------------------------------------
 
     if not puntos_tc and not puntos_ieps:
         return None
@@ -427,6 +419,7 @@ def run_scraper():
 
     fechas_tc, valores_tc = [], []
     fechas_ieps, fechas_fin_ieps, vals_regular, vals_premium, vals_diesel = [], [], [], [], []
+    vigencias_texto = []  # Nueva lista para almacenar la vigencia textual del DOF
     ultima_fecha_tc = "No disponible"
     ultima_vigencia = "No disponible"
 
@@ -438,10 +431,11 @@ def run_scraper():
             
         if dia.get("ieps") and dia["ieps"].get("regular"):
             fechas_ieps.append(dia["ieps"]["fecha"])
-            fechas_fin_ieps.append(dia["ieps"].get("fecha_fin_real")) # Registramos el fin de vigencia real leído
+            fechas_fin_ieps.append(dia["ieps"].get("fecha_fin_real"))
             vals_regular.append(dia["ieps"]["regular"])
             vals_premium.append(dia["ieps"]["premium"])
             vals_diesel.append(dia["ieps"]["diesel"])
+            vigencias_texto.append(dia["ieps"]["vigencia"])  # Guardamos la vigencia completa
             ultima_vigencia = dia["ieps"]["vigencia"]
 
     datos = {
@@ -453,6 +447,7 @@ def run_scraper():
         "vals_regular": vals_regular,
         "vals_premium": vals_premium,
         "vals_diesel": vals_diesel,
+        "vigencias_texto": vigencias_texto,  # Incluimos en el diccionario global
         "ultima_fecha_tc": ultima_fecha_tc,
         "ultima_vigencia": ultima_vigencia,
     }
@@ -463,6 +458,7 @@ def run_scraper():
 def construir_respuesta(datos, desde_cache=False):
     grafica_json = generar_grafica_json(datos)
 
+    # --- AGREGADO: Se incluye 'vigencias_ieps' en 'historico_raw' para la exportación de datos ---
     resultado = {
         "fecha_consulta": datos["fecha_consulta"],
         "tipo_cambio": None,
@@ -473,6 +469,7 @@ def construir_respuesta(datos, desde_cache=False):
             "fechas_tc": datos["fechas_tc"],
             "valores_tc": datos["valores_tc"],
             "fechas_ieps": datos["fechas_ieps"],
+            "vigencias_ieps": datos.get("vigencias_texto", []),  # <-- Listo para que lo consuma el botón CSV
             "vals_regular": datos["vals_regular"],
             "vals_premium": datos["vals_premium"],
             "vals_diesel": datos["vals_diesel"]
