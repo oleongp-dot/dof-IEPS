@@ -56,7 +56,7 @@
 
             <div class="card p-4 flex flex-col justify-between min-h-[110px]">
                 <div>
-                    <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Regular (<91 OCT)</p>
+                    <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Regular (&lt;91 OCT)</p>
                     <div class="flex items-baseline gap-2 mt-1">
                         <h2 class="text-2xl font-bold text-[#F0F6FC]" id="val-regular">--</h2>
                         <span class="text-[10px] font-semibold text-[#8B949E]" id="cpg-regular"></span>
@@ -235,7 +235,7 @@
                 });
         }
 
-        // DESCARGA CSV (DATOS CRUDOS)
+        // DESCARGA CSV (DATOS CRUDOS MODIFICADO)
         function descargarCSV(tipo) {
             if (!cacheLocalRaw || !cacheLocalRaw.historico_raw) return alert("Cargando datos...");
             const raw = cacheLocalRaw.historico_raw;
@@ -247,9 +247,13 @@
                 filename = "dof_tc_historico.csv";
                 raw.fechas_tc.forEach((f, i) => csv += `${f},${raw.valores_tc[i]}\n`);
             } else {
-                csv += "Fecha,Regular,Premium,Diesel\n";
+                // MODIFICACIÓN: Agregada columna de Vigencia
+                csv += "Fecha Publicación,Vigencia,Regular,Premium,Diesel\n";
                 filename = "dof_ieps_historico.csv";
-                raw.fechas_ieps.forEach((f, i) => csv += `${f},${raw.vals_regular[i]},${raw.vals_premium[i]},${raw.vals_diesel[i]}\n`);
+                raw.fechas_ieps.forEach((f, i) => {
+                    const vigenciaText = raw.vigencias_ieps && raw.vigencias_ieps[i] ? raw.vigencias_ieps[i] : "No disponible";
+                    csv += `${f},"${vigenciaText}",${raw.vals_regular[i]},${raw.vals_premium[i]},${raw.vals_diesel[i]}\n`;
+                });
             }
 
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
