@@ -179,8 +179,8 @@
                 }
 
                 if (data.ieps) {
-                    // Cargar dinámicamente la leyenda de la vigencia actual
-                    const textoVigencia = data.ieps.vigencia ? `📅 ${data.ieps.vigencia}` : "📅 Vigencia no disponible";
+                    // Quitamos el emoji de calendario para dejar solo el texto limpio
+                    const textoVigencia = data.ieps.vigencia ? data.ieps.vigencia : "Vigencia no disponible";
                     const fuels = ['regular', 'premium', 'diesel'];
                     
                     fuels.forEach(f => {
@@ -249,7 +249,7 @@
                 });
         }
 
-        // DESCARGA CSV (DATOS CRUDOS CON VIGENCIA ENVOLVIMIENTO SEGURO)
+        // DESCARGA CSV (DATOS CRUDOS)
         function descargarCSV(tipo) {
             if (!cacheLocalRaw || !cacheLocalRaw.historico_raw) return alert("Cargando datos...");
             const raw = cacheLocalRaw.historico_raw;
