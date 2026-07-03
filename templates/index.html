@@ -46,6 +46,7 @@
         </header>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <!-- TARJETA TIPO DE CAMBIO -->
             <div class="card p-4 flex flex-col justify-between min-h-[110px]">
                 <div>
                     <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">💱 Tipo de Cambio</p>
@@ -54,9 +55,11 @@
                 <p class="text-xs font-mono mt-2" id="var-tc">--</p>
             </div>
 
+            <!-- TARJETA REGULAR -->
             <div class="card p-4 flex flex-col justify-between min-h-[110px]">
                 <div>
                     <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Regular (&lt;91 OCT)</p>
+                    <p class="text-[9px] text-[#8B949E] font-medium mt-0.5" id="vigencia-regular">--</p>
                     <div class="flex items-baseline gap-2 mt-1">
                         <h2 class="text-2xl font-bold text-[#F0F6FC]" id="val-regular">--</h2>
                         <span class="text-[10px] font-semibold text-[#8B949E]" id="cpg-regular"></span>
@@ -65,9 +68,11 @@
                 <p class="text-xs font-mono mt-2" id="var-regular">--</p>
             </div>
 
+            <!-- TARJETA PREMIUM -->
             <div class="card p-4 flex flex-col justify-between min-h-[110px]">
                 <div>
                     <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Premium</p>
+                    <p class="text-[9px] text-[#8B949E] font-medium mt-0.5" id="vigencia-premium">--</p>
                     <div class="flex items-baseline gap-2 mt-1">
                         <h2 class="text-2xl font-bold text-[#F0F6FC]" id="val-premium">--</h2>
                         <span class="text-[10px] font-semibold text-[#8B949E]" id="cpg-premium"></span>
@@ -76,9 +81,11 @@
                 <p class="text-xs font-mono mt-2" id="var-premium">--</p>
             </div>
 
+            <!-- TARJETA DIÉSEL -->
             <div class="card p-4 flex flex-col justify-between min-h-[110px]">
                 <div>
                     <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Diésel</p>
+                    <p class="text-[9px] text-[#8B949E] font-medium mt-0.5" id="vigencia-diesel">--</p>
                     <div class="flex items-baseline gap-2 mt-1">
                         <h2 class="text-2xl font-bold text-[#F0F6FC]" id="val-diesel">--</h2>
                         <span class="text-[10px] font-semibold text-[#8B949E]" id="cpg-diesel"></span>
@@ -172,8 +179,15 @@
                 }
 
                 if (data.ieps) {
+                    // Cargar dinámicamente la leyenda de la vigencia actual
+                    const textoVigencia = data.ieps.vigencia ? `📅 ${data.ieps.vigencia}` : "📅 Vigencia no disponible";
                     const fuels = ['regular', 'premium', 'diesel'];
+                    
                     fuels.forEach(f => {
+                        if (document.getElementById(`vigencia-${f}`)) {
+                            document.getElementById(`vigencia-${f}`).innerText = textoVigencia;
+                        }
+                        
                         if (data.ieps[f]) {
                             document.getElementById(`val-${f}`).innerText = `$${data.ieps[f].valor.toFixed(4)}`;
                             mapearEstiloVariacion(`var-${f}`, data.ieps[f].variacion);
@@ -235,7 +249,7 @@
                 });
         }
 
-        // DESCARGA CSV (DATOS CRUDOS MODIFICADO)
+        // DESCARGA CSV (DATOS CRUDOS CON VIGENCIA ENVOLVIMIENTO SEGURO)
         function descargarCSV(tipo) {
             if (!cacheLocalRaw || !cacheLocalRaw.historico_raw) return alert("Cargando datos...");
             const raw = cacheLocalRaw.historico_raw;
@@ -247,7 +261,6 @@
                 filename = "dof_tc_historico.csv";
                 raw.fechas_tc.forEach((f, i) => csv += `${f},${raw.valores_tc[i]}\n`);
             } else {
-                // MODIFICACIÓN: Agregada columna de Vigencia
                 csv += "Fecha Publicación,Vigencia,Regular,Premium,Diesel\n";
                 filename = "dof_ieps_historico.csv";
                 raw.fechas_ieps.forEach((f, i) => {
