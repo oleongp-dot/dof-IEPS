@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,33 +14,48 @@
             color: #E6EDF3;
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
         }
+
         .card {
             background-color: #161B22;
             border: 1px solid #30363D;
             border-radius: 6px;
         }
-        .badge-sube { color: #58A6FF; }
-        .badge-baja { color: #FF7B72; }
-        .badge-neutral { color: #8B949E; }
+
+        .badge-sube {
+            color: #58A6FF;
+        }
+
+        .badge-baja {
+            color: #FF7B72;
+        }
+
+        .badge-neutral {
+            color: #8B949E;
+        }
     </style>
 </head>
+
 <body class="p-4 md:p-8">
 
     <div id="area-reporte" class="max-w-6xl mx-auto p-4 bg-[#0D1117] rounded-xl">
-        
-        <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#30363D] pb-4 mb-6 gap-4">
+
+        <header
+            class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#30363D] pb-4 mb-6 gap-4">
             <div class="flex items-center gap-3">
                 <span class="text-3xl">📊</span>
                 <div>
                     <h1 class="text-2xl font-bold tracking-tight text-[#F0F6FC]">DOF Monitor</h1>
-                    <p class="text-[10px] text-[#8B949E] uppercase tracking-widest" id="fecha-consulta">Sincronizando...</p>
+                    <p class="text-[10px] text-[#8B949E] uppercase tracking-widest" id="fecha-consulta">Sincronizando...
+                    </p>
                 </div>
             </div>
             <div class="flex gap-2" id="controles-principales">
-                <button id="btn-screenshot" onclick="generarCapturaSegura()" class="bg-[#21262D] hover:bg-[#30363D] text-[#C9D1D9] border border-[#30363D] font-medium text-xs px-3 py-2 rounded transition flex items-center gap-2">
+                <button id="btn-screenshot" onclick="generarCapturaSegura()"
+                    class="bg-[#21262D] hover:bg-[#30363D] text-[#C9D1D9] border border-[#30363D] font-medium text-xs px-3 py-2 rounded transition flex items-center gap-2">
                     📸 Reporte (PNG)
                 </button>
-                <button id="btn-actualizar" onclick="consultarAPI(true)" class="bg-[#238636] hover:bg-[#2EA043] text-white font-medium text-xs px-3 py-2 rounded transition">
+                <button id="btn-actualizar" onclick="consultarAPI(true)"
+                    class="bg-[#238636] hover:bg-[#2EA043] text-white font-medium text-xs px-3 py-2 rounded transition">
                     Actualizar
                 </button>
             </div>
@@ -47,18 +63,25 @@
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <!-- TARJETA TIPO DE CAMBIO -->
-            <div class="card p-4 flex flex-col justify-between min-h-[110px]">
+            <div class="card p-4 flex flex-col justify-between min-h-[135px]">
                 <div>
                     <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">💱 Tipo de Cambio</p>
-                    <h2 class="text-2xl font-bold mt-1 text-[#F0F6FC]" id="val-tc">--</h2>
+                    <h2 class="text-2xl font-bold mt-2 text-[#F0F6FC]" id="val-tc">--</h2>
                 </div>
                 <p class="text-xs font-mono mt-2" id="var-tc">--</p>
             </div>
 
             <!-- TARJETA REGULAR -->
-            <div class="card p-4 flex flex-col justify-between min-h-[110px]">
+            <div class="card p-4 flex flex-col justify-between min-h-[135px]">
                 <div>
-                    <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Regular (&lt;91 OCT)</p>
+                    <div class="flex justify-between items-start">
+                        <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Regular (&lt;91
+                            OCT)</p>
+                        <span id="badge-adic-regular"
+                            class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#238636]/20 text-[#3FB950] border border-[#238636]/40 hidden">
+                            Est. Adic: $0.0000
+                        </span>
+                    </div>
                     <p class="text-[9px] text-[#8B949E] font-medium mt-0.5" id="vigencia-regular">--</p>
                     <div class="flex items-baseline gap-2 mt-1">
                         <h2 class="text-2xl font-bold text-[#F0F6FC]" id="val-regular">--</h2>
@@ -69,9 +92,15 @@
             </div>
 
             <!-- TARJETA PREMIUM -->
-            <div class="card p-4 flex flex-col justify-between min-h-[110px]">
+            <div class="card p-4 flex flex-col justify-between min-h-[135px]">
                 <div>
-                    <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Premium</p>
+                    <div class="flex justify-between items-start">
+                        <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Premium</p>
+                        <span id="badge-adic-premium"
+                            class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#238636]/20 text-[#3FB950] border border-[#238636]/40 hidden">
+                            Est. Adic: $0.0000
+                        </span>
+                    </div>
                     <p class="text-[9px] text-[#8B949E] font-medium mt-0.5" id="vigencia-premium">--</p>
                     <div class="flex items-baseline gap-2 mt-1">
                         <h2 class="text-2xl font-bold text-[#F0F6FC]" id="val-premium">--</h2>
@@ -82,9 +111,15 @@
             </div>
 
             <!-- TARJETA DIÉSEL -->
-            <div class="card p-4 flex flex-col justify-between min-h-[110px]">
+            <div class="card p-4 flex flex-col justify-between min-h-[135px]">
                 <div>
-                    <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Diésel</p>
+                    <div class="flex justify-between items-start">
+                        <p class="text-[10px] font-semibold text-[#8B949E] uppercase tracking-wider">🛢️ Diésel</p>
+                        <span id="badge-adic-diesel"
+                            class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#238636]/20 text-[#3FB950] border border-[#238636]/40 hidden">
+                            Est. Adic: $0.0000
+                        </span>
+                    </div>
                     <p class="text-[9px] text-[#8B949E] font-medium mt-0.5" id="vigencia-diesel">--</p>
                     <div class="flex items-baseline gap-2 mt-1">
                         <h2 class="text-2xl font-bold text-[#F0F6FC]" id="val-diesel">--</h2>
@@ -97,16 +132,19 @@
 
         <div class="flex justify-end gap-2 mb-4 border-b border-[#30363D] pb-3" id="controles-csv">
             <span class="text-[10px] text-[#8B949E] self-center mr-2 font-bold uppercase">Descargar Datos Crudos:</span>
-            <button onclick="descargarCSV('tc')" class="text-[#8B949E] hover:text-[#E6EDF3] text-[10px] border border-[#30363D] px-2 py-1 rounded transition flex items-center gap-1">
+            <button onclick="descargarCSV('tc')"
+                class="text-[#8B949E] hover:text-[#E6EDF3] text-[10px] border border-[#30363D] px-2 py-1 rounded transition flex items-center gap-1">
                 📥 TC (.csv)
             </button>
-            <button onclick="descargarCSV('ieps')" class="text-[#8B949E] hover:text-[#E6EDF3] text-[10px] border border-[#30363D] px-2 py-1 rounded transition flex items-center gap-1">
+            <button onclick="descargarCSV('ieps')"
+                class="text-[#8B949E] hover:text-[#E6EDF3] text-[10px] border border-[#30363D] px-2 py-1 rounded transition flex items-center gap-1">
                 📥 IEPS (.csv)
             </button>
         </div>
 
         <main id="bloque-grafica" class="card p-4 min-h-[400px] flex flex-col justify-center relative">
-            <div id="loading-overlay" class="absolute inset-0 bg-[#0D1117]/80 flex flex-col items-center justify-center gap-3 z-10 rounded">
+            <div id="loading-overlay"
+                class="absolute inset-0 bg-[#0D1117]/80 flex flex-col items-center justify-center gap-3 z-10 rounded">
                 <div class="animate-spin rounded-full h-8 w-8 border-4 border-[#30363D] border-t-[#58A6FF]"></div>
                 <p class="text-xs text-[#8B949E]">Consultando Diario Oficial...</p>
             </div>
@@ -158,7 +196,7 @@
         async function consultarAPI(forzar = false) {
             const overlay = document.getElementById('loading-overlay');
             const btnAct = document.getElementById('btn-actualizar');
-            
+
             overlay.classList.remove('hidden');
             btnAct.disabled = true;
 
@@ -168,7 +206,7 @@
                 const data = await res.json();
                 cacheLocalRaw = data;
 
-                document.getElementById('fecha-consulta').innerText = 
+                document.getElementById('fecha-consulta').innerText =
                     `Sincronización: ${data.fecha_consulta} ${data.desde_cache ? '(Caché)' : '(Vivo)'}`;
 
                 let tcActual = 0;
@@ -179,17 +217,25 @@
                 }
 
                 if (data.ieps) {
-                    // Quitamos el emoji de calendario para dejar solo el texto limpio
                     const textoVigencia = data.ieps.vigencia ? data.ieps.vigencia : "Vigencia no disponible";
                     const fuels = ['regular', 'premium', 'diesel'];
-                    
+
                     fuels.forEach(f => {
                         if (document.getElementById(`vigencia-${f}`)) {
                             document.getElementById(`vigencia-${f}`).innerText = textoVigencia;
                         }
-                        
+
                         if (data.ieps[f]) {
                             document.getElementById(`val-${f}`).innerText = `$${data.ieps[f].valor.toFixed(4)}`;
+
+                            // Mostrar badge del estímulo adicional si existe
+                            const badge = document.getElementById(`badge-adic-${f}`);
+                            if (badge) {
+                                const valAdic = data.ieps[f].adicional || 0.0;
+                                badge.innerText = `Est. Adic: $${valAdic.toFixed(4)}`;
+                                badge.classList.remove('hidden');
+                            }
+
                             mapearEstiloVariacion(`var-${f}`, data.ieps[f].variacion);
                             calcularEInyectarCPG(`cpg-${f}`, data.ieps[f].valor, tcActual);
                             calcularVariacionCPG(`var-${f}`, data.ieps[f].variacion, tcActual);
@@ -209,7 +255,6 @@
             }
         }
 
-        // CAPTURA DE PANTALLA PANORÁMICA BLINDADA
         function generarCapturaSegura() {
             const nodeGraf = document.getElementById('contenedor-grafica');
             const bloqueGraf = document.getElementById('bloque-grafica');
@@ -228,28 +273,26 @@
                     bloqueGraf.innerHTML = '';
                     bloqueGraf.appendChild(img);
 
-                    // Ocultar botones para la foto
                     document.getElementById('controles-principales').style.visibility = 'hidden';
                     document.getElementById('controles-csv').style.visibility = 'hidden';
 
                     html2canvas(document.getElementById('area-reporte'), { backgroundColor: '#0D1117', scale: 2 })
-                    .then(canvas => {
-                        const link = document.createElement('a');
-                        link.download = `Reporte_DOF_${new Date().toISOString().slice(0,10)}.png`;
-                        link.href = canvas.toDataURL();
-                        link.click();
+                        .then(canvas => {
+                            const link = document.createElement('a');
+                            link.download = `Reporte_DOF_${new Date().toISOString().slice(0, 10)}.png`;
+                            link.href = canvas.toDataURL();
+                            link.click();
 
-                        bloqueGraf.innerHTML = '';
-                        bloqueGraf.appendChild(backup);
-                        document.getElementById('controles-principales').style.visibility = 'visible';
-                        document.getElementById('controles-csv').style.visibility = 'visible';
-                        btnScr.innerText = "📸 Reporte (PNG)";
-                        btnScr.disabled = false;
-                    });
+                            bloqueGraf.innerHTML = '';
+                            bloqueGraf.appendChild(backup);
+                            document.getElementById('controles-principales').style.visibility = 'visible';
+                            document.getElementById('controles-csv').style.visibility = 'visible';
+                            btnScr.innerText = "📸 Reporte (PNG)";
+                            btnScr.disabled = false;
+                        });
                 });
         }
 
-        // DESCARGA CSV (DATOS CRUDOS)
         function descargarCSV(tipo) {
             if (!cacheLocalRaw || !cacheLocalRaw.historico_raw) return alert("Cargando datos...");
             const raw = cacheLocalRaw.historico_raw;
@@ -261,11 +304,15 @@
                 filename = "dof_tc_historico.csv";
                 raw.fechas_tc.forEach((f, i) => csv += `${f},${raw.valores_tc[i]}\n`);
             } else {
-                csv += "Fecha Publicación,Vigencia,Regular,Premium,Diesel\n";
+                csv += "Fecha Publicacion,Vigencia,Regular,Est_Adic_Regular,Premium,Est_Adic_Premium,Diesel,Est_Adic_Diesel\n";
                 filename = "dof_ieps_historico.csv";
                 raw.fechas_ieps.forEach((f, i) => {
                     const vigenciaText = raw.vigencias_ieps && raw.vigencias_ieps[i] ? raw.vigencias_ieps[i] : "No disponible";
-                    csv += `${f},"${vigenciaText}",${raw.vals_regular[i]},${raw.vals_premium[i]},${raw.vals_diesel[i]}\n`;
+                    const adicReg = raw.vals_adic_regular && raw.vals_adic_regular[i] !== undefined ? raw.vals_adic_regular[i] : 0.0;
+                    const adicPrem = raw.vals_adic_premium && raw.vals_adic_premium[i] !== undefined ? raw.vals_adic_premium[i] : 0.0;
+                    const adicDiesel = raw.vals_adic_diesel && raw.vals_adic_diesel[i] !== undefined ? raw.vals_adic_diesel[i] : 0.0;
+
+                    csv += `${f},"${vigenciaText}",${raw.vals_regular[i]},${adicReg},${raw.vals_premium[i]},${adicPrem},${raw.vals_diesel[i]},${adicDiesel}\n`;
                 });
             }
 
@@ -279,4 +326,5 @@
         window.onload = () => consultarAPI(false);
     </script>
 </body>
+
 </html>
