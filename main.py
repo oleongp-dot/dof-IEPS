@@ -24,14 +24,6 @@ headers = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
-palabras_clave = [
-    "tipo de cambio",
-    "ieps",
-    "combustibles",
-    "cuotas disminuidas",
-    "estímulo fiscal",
-]
-
 # ==========================================
 # GESTIÓN DE CACHÉ
 # ==========================================
@@ -86,50 +78,98 @@ def extraer_ieps(url, fecha_str):
         soup = BeautifulSoup(respuesta.text, "html.parser")
         texto = soup.get_text()
 
-        if "Artículo Tercero" in texto or "ARTÍCULO TERCERO" in texto:
-            inicio = (
-                texto.find("Artículo Tercero")
-                if "Artículo Tercero" in texto
-                else texto.find("ARTÍCULO TERCERO")
-            )
-            bloque = texto[inicio : inicio + 1200]
-
-            vigencia = re.search(
-                r"periodo comprendido del (.+?)\s+al\s+(.+?\d{4})", bloque, re.IGNORECASE
-            )
+        # Extraer vigencia
+        vigencia = re.search(
+            r"periodo comprendido del (.+?)\s+al\s+(.+?\d{4})", texto, re.IGNORECASE
+        )
+        
+        vigencia_str = "No disponible"
+        fecha_fin_real = None
+        
+        if vigencia:
+            texto_inicio = vigencia.group(1).strip()
+            texto_fin = vigencia.group(2).strip()
+            vigencia_str = f"del {texto_inicio} al {texto_fin}"
             
-            vigencia_str = "No disponible"
-            fecha_fin_real = None
+            anio_base = fecha_str.split("/")[-1]
+            fecha_fin_real_dt = parsear_fecha_texto(texto_fin, anio_base)
+            if fecha_fin_real_dt:
+                fecha_fin_real = fecha_fin_real_dt.strftime("%d/%m/%Y")
+
+        valores = {"regular": 0.0, "premium": 0.0, "diesel": 0.0}
+
+        # Búsqueda estricta obligatoria del Artículo Tercero (evita Artículo Segundo)
+        match_inicio = re.search(r"ARTÍCULO\s+TERCERO", texto, re.IGNORECASE)
+        if not match_inicio:
+            match_inicio = re.search(r"ARTÍCULO\s+PRIMERO", texto, re.IGNORECASE)
+
+        if match_inicio:
+            inicio = match_inicio.start()
+            bloque_base = texto[inicio : inicio + 3000]
             
-            if vigencia:
-                texto_inicio = vigencia.group(1).strip()
-                texto_fin = vigencia.group(2).strip()
-                vigencia_str = f"del {texto_inicio} al {texto_fin}"
-                
-                anio_base = fecha_str.split("/")[-1]
-                fecha_fin_real_dt = parsear_fecha_texto(texto_fin, anio_base)
-                if fecha_fin_real_dt:
-                    fecha_fin_real = fecha_fin_real_dt.strftime("%d/%m/%Y")
+            for linea in bloque_base.split("\n"):
+                linea_clean = linea.strip()
+                if not linea_clean:
+                    continue
 
-            patrones = {
-                "regular": r"Gasolina\s+menor\s+a\s+91\s+octanos\s+(\$[\d.]+)",
-                "premium": r"Gasolina\s+mayor\s+o\s+igual\s+a\s+91\s+octanos.*?(\$[\d.]+)",
-                "diesel": r"Diésel\s+(\$[\d.]+)",
-            }
+                if re.search(r"Gasolina\s+menor\s+a\s+91\s+octanos", linea_clean, re.I):
+                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
+                    if m: valores["regular"] = float(m.group(1))
 
-            valores = {}
-            for key, patron in patrones.items():
-                match = re.search(patron, bloque, re.DOTALL | re.IGNORECASE)
-                if match:
-                    valores[key] = float(match.group(1).replace("$", ""))
+                elif re.search(r"Gasolina\s+mayor\s+o\s+igual\s+a\s+91\s+octanos", linea_clean, re.I):
+                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
+                    if m: valores["premium"] = float(m.group(1))
 
-            if len(valores) == 3:
-                return {
-                    "fecha": fecha_str,
-                    "vigencia": vigencia_str,
-                    "fecha_fin_real": fecha_fin_real,
-                    **valores,
-                }
+                elif re.search(r"Diésel", linea_clean, re.I):
+                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
+                    if m: valores["diesel"] = float(m.group(1))
+
+            if valores["premium"] == 0.0 or valores["diesel"] == 0.0:
+                cifras = re.findall(r"\b\d+\.\d{4}\b", bloque_base)
+                if len(cifras) >= 3:
+                    valores["regular"] = float(cifras[0])
+                    valores["premium"] = float(cifras[1])
+                    valores["diesel"] = float(cifras[2])
+
+        # Búsqueda de Estímulo Adicional (Artículo Cuarto)
+        valores["adic_regular"] = 0.0
+        valores["adic_premium"] = 0.0
+        valores["adic_diesel"] = 0.0
+
+        idx_art4 = re.search(r"ARTÍCULO\s+CUARTO", texto, re.IGNORECASE)
+        if idx_art4:
+            bloque_art4 = texto[idx_art4.start() : idx_art4.start() + 2500]
+            
+            for linea in bloque_art4.split("\n"):
+                linea_clean = linea.strip()
+                if not linea_clean:
+                    continue
+
+                if re.search(r"Gasolina\s+menor\s+a\s+91\s+octanos", linea_clean, re.I):
+                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
+                    if m: valores["adic_regular"] = float(m.group(1))
+
+                elif re.search(r"Gasolina\s+mayor\s+o\s+igual\s+a\s+91\s+octanos", linea_clean, re.I):
+                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
+                    if m: valores["adic_premium"] = float(m.group(1))
+
+                elif re.search(r"Diésel", linea_clean, re.I):
+                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
+                    if m: valores["adic_diesel"] = float(m.group(1))
+
+            if valores["adic_premium"] == 0.0 and valores["adic_diesel"] == 0.0:
+                cifras_art4 = re.findall(r"\b\d+\.\d{4}\b", bloque_art4)
+                if len(cifras_art4) >= 3:
+                    valores["adic_regular"] = float(cifras_art4[0])
+                    valores["adic_premium"] = float(cifras_art4[1])
+                    valores["adic_diesel"] = float(cifras_art4[2])
+
+        return {
+            "fecha": fecha_str,
+            "vigencia": vigencia_str,
+            "fecha_fin_real": fecha_fin_real,
+            **valores,
+        }
     except:
         pass
     return None
@@ -179,20 +219,18 @@ def buscar_dia(fecha):
 
             for pub in soup.find_all("a"):
                 texto = pub.text.lower().strip()
-                if not texto:
+                enlace = pub.get("href", "")
+                
+                if not texto or not enlace or "nota_detalle.php" not in enlace:
                     continue
-                for palabra in palabras_clave:
-                    if palabra in texto:
-                        enlace = pub.get("href", "")
-                        if enlace and not enlace.startswith("http"):
-                            enlace = f"https://dof.gob.mx/{enlace}"
-                        if "nota_detalle" not in enlace and fecha_str not in enlace and "indicadores" not in enlace:
-                            continue
-                        if "tipo de cambio" in texto:
-                            tipo_cambio_url = enlace
-                        elif ieps_url is None:
-                            ieps_url = enlace
-                        break
+
+                if enlace and not enlace.startswith("http"):
+                    enlace = f"https://dof.gob.mx/{enlace}"
+
+                if "tipo de cambio" in texto and not tipo_cambio_url:
+                    tipo_cambio_url = enlace
+                elif any(kw in texto for kw in ["estímulos fiscales", "estimulos fiscales", "cuotas disminuidas", "porcentajes y los montos"]) and not ieps_url:
+                    ieps_url = enlace
         except:
             pass
 
@@ -211,7 +249,9 @@ def buscar_dia(fecha):
 def calcular_variacion(lista_valores):
     if len(lista_valores) < 2:
         return {"texto": "Sin histórico", "tipo": "neutral", "valor": 0}
+    
     diferencia = lista_valores[-1] - lista_valores[-2]
+    
     if diferencia > 0:
         return {
             "texto": f"+${diferencia:.4f}",
@@ -237,6 +277,9 @@ def generar_grafica_json(datos):
     vals_regular = datos.get("vals_regular", [])
     vals_premium = datos.get("vals_premium", [])
     vals_diesel = datos.get("vals_diesel", [])
+    vals_adic_regular = datos.get("vals_adic_regular", [])
+    vals_adic_premium = datos.get("vals_adic_premium", [])
+    vals_adic_diesel = datos.get("vals_adic_diesel", [])
     fechas_fin_ieps = datos.get("fechas_fin_ieps", [])
 
     puntos_tc = []
@@ -249,12 +292,20 @@ def generar_grafica_json(datos):
     puntos_tc.sort(key=lambda x: x[0])
 
     puntos_ieps = []
-    for f, f_fin, m, p, d in zip(fechas_ieps, fechas_fin_ieps, vals_regular, vals_premium, vals_diesel):
+    for f, f_fin, reg, prem, dies, ad_reg, ad_prem, ad_dies in zip(
+        fechas_ieps, fechas_fin_ieps, vals_regular, vals_premium, vals_diesel,
+        vals_adic_regular, vals_adic_premium, vals_adic_diesel
+    ):
         try:
             f_date = datetime.datetime.strptime(f, "%d/%m/%Y")
             if f_date.weekday() == 4:
                 f_date = f_date + datetime.timedelta(days=1)
-            puntos_ieps.append((f_date, f_fin, m, p, d))
+            
+            val_r = -ad_reg if reg == 0.0 and ad_reg > 0 else reg
+            val_p = -ad_prem if prem == 0.0 and ad_prem > 0 else prem
+            val_d = -ad_dies if dies == 0.0 and ad_dies > 0 else dies
+
+            puntos_ieps.append((f_date, f_fin, val_r, val_p, val_d))
         except:
             continue
             
@@ -376,7 +427,7 @@ def generar_grafica_json(datos):
             todos_ieps.extend([p[2], p[3], p[4]])
         min_ieps = min(todos_ieps)
         max_ieps = max(todos_ieps)
-        margen_ieps = max((max_ieps - min_ieps) * 0.05, 0.05)
+        margen_ieps = max(abs(max_ieps - min_ieps) * 0.05, 0.05)
         
         fig.update_yaxes(
             title_text="Pesos por litro",
@@ -385,9 +436,21 @@ def generar_grafica_json(datos):
             range=[min_ieps - margen_ieps, max_ieps + margen_ieps],
             showgrid=True,
             gridcolor='rgba(139, 148, 158, 0.08)',
+            zeroline=True,
+            zerolinecolor='rgba(139, 148, 158, 0.3)',
+            zerolinewidth=1.5,
+            gridwidth=1,
             tickfont=dict(size=10, color="#8B949E"),
             linecolor="#30363D",
             tickformat=".4f"
+        )
+        
+        fig.add_hline(
+            y=0, 
+            line_dash="dot", 
+            line_color="rgba(139, 148, 158, 0.25)", 
+            line_width=1.5,
+            row=2, col=1
         )
 
     return fig.to_json()
@@ -418,8 +481,10 @@ def run_scraper():
         pass
 
     fechas_tc, valores_tc = [], []
-    fechas_ieps, fechas_fin_ieps, vals_regular, vals_premium, vals_diesel = [], [], [], [], []
-    vigencias_texto = []  # Nueva lista para almacenar la vigencia textual del DOF
+    fechas_ieps, fechas_fin_ieps = [], []
+    vals_regular, vals_premium, vals_diesel = [], [], []
+    vals_adic_regular, vals_adic_premium, vals_adic_diesel = [], [], []
+    vigencias_texto = []
     ultima_fecha_tc = "No disponible"
     ultima_vigencia = "No disponible"
 
@@ -429,14 +494,20 @@ def run_scraper():
             valores_tc.append(dia["tc"]["valor"])
             ultima_fecha_tc = dia["tc"]["fecha"]
             
-        if dia.get("ieps") and dia["ieps"].get("regular"):
+        if dia.get("ieps") and dia["ieps"].get("regular") is not None:
             fechas_ieps.append(dia["ieps"]["fecha"])
             fechas_fin_ieps.append(dia["ieps"].get("fecha_fin_real"))
-            vals_regular.append(dia["ieps"]["regular"])
-            vals_premium.append(dia["ieps"]["premium"])
-            vals_diesel.append(dia["ieps"]["diesel"])
-            vigencias_texto.append(dia["ieps"]["vigencia"])  # Guardamos la vigencia completa
-            ultima_vigencia = dia["ieps"]["vigencia"]
+            
+            vals_regular.append(dia["ieps"].get("regular", 0.0))
+            vals_premium.append(dia["ieps"].get("premium", 0.0))
+            vals_diesel.append(dia["ieps"].get("diesel", 0.0))
+            
+            vals_adic_regular.append(dia["ieps"].get("adic_regular", 0.0))
+            vals_adic_premium.append(dia["ieps"].get("adic_premium", 0.0))
+            vals_adic_diesel.append(dia["ieps"].get("adic_diesel", 0.0))
+            
+            vigencias_texto.append(dia["ieps"].get("vigencia", "No disponible"))
+            ultima_vigencia = dia["ieps"].get("vigencia", "No disponible")
 
     datos = {
         "fecha_consulta": hoy.strftime("%d/%m/%Y %H:%M"),
@@ -447,7 +518,10 @@ def run_scraper():
         "vals_regular": vals_regular,
         "vals_premium": vals_premium,
         "vals_diesel": vals_diesel,
-        "vigencias_texto": vigencias_texto,  # Incluimos en el diccionario global
+        "vals_adic_regular": vals_adic_regular,
+        "vals_adic_premium": vals_adic_premium,
+        "vals_adic_diesel": vals_adic_diesel,
+        "vigencias_texto": vigencias_texto,
         "ultima_fecha_tc": ultima_fecha_tc,
         "ultima_vigencia": ultima_vigencia,
     }
@@ -458,7 +532,6 @@ def run_scraper():
 def construir_respuesta(datos, desde_cache=False):
     grafica_json = generar_grafica_json(datos)
 
-    # --- AGREGADO: Se incluye 'vigencias_ieps' en 'historico_raw' para la exportación de datos ---
     resultado = {
         "fecha_consulta": datos["fecha_consulta"],
         "tipo_cambio": None,
@@ -469,10 +542,13 @@ def construir_respuesta(datos, desde_cache=False):
             "fechas_tc": datos["fechas_tc"],
             "valores_tc": datos["valores_tc"],
             "fechas_ieps": datos["fechas_ieps"],
-            "vigencias_ieps": datos.get("vigencias_texto", []),  # <-- Listo para que lo consuma el botón CSV
+            "vigencias_ieps": datos.get("vigencias_texto", []),
             "vals_regular": datos["vals_regular"],
             "vals_premium": datos["vals_premium"],
-            "vals_diesel": datos["vals_diesel"]
+            "vals_diesel": datos["vals_diesel"],
+            "vals_adic_regular": datos.get("vals_adic_regular", []),
+            "vals_adic_premium": datos.get("vals_adic_premium", []),
+            "vals_adic_diesel": datos.get("vals_adic_diesel", [])
         }
     }
 
@@ -488,14 +564,17 @@ def construir_respuesta(datos, desde_cache=False):
             "vigencia": datos["ultima_vigencia"],
             "regular": {
                 "valor": datos["vals_regular"][-1],
+                "adicional": datos.get("vals_adic_regular", [0.0])[-1] if datos.get("vals_adic_regular") else 0.0,
                 "variacion": calcular_variacion(datos["vals_regular"]),
             },
             "premium": {
                 "valor": datos["vals_premium"][-1],
+                "adicional": datos.get("vals_adic_premium", [0.0])[-1] if datos.get("vals_adic_premium") else 0.0,
                 "variacion": calcular_variacion(datos["vals_premium"]),
             },
             "diesel": {
                 "valor": datos["vals_diesel"][-1],
+                "adicional": datos.get("vals_adic_diesel", [0.0])[-1] if datos.get("vals_adic_diesel") else 0.0,
                 "variacion": calcular_variacion(datos["vals_diesel"]),
             },
         }
