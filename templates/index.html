@@ -7,7 +7,6 @@
     <title>DOF Monitor</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         body {
             background-color: #0D1117;
@@ -50,12 +49,12 @@
                 </div>
             </div>
             <div class="flex gap-2" id="controles-principales">
-                <button id="btn-screenshot" onclick="generarCapturaSegura()"
-                    class="bg-[#21262D] hover:bg-[#30363D] text-[#C9D1D9] border border-[#30363D] font-medium text-xs px-3 py-2 rounded transition flex items-center gap-2">
+                <button id="btn-screenshot" onclick="descargarReporteCanvasNativo()"
+                    class="bg-[#21262D] hover:bg-[#30363D] text-[#C9D1D9] border border-[#30363D] font-medium text-xs px-3 py-2 rounded transition flex items-center gap-2 cursor-pointer">
                     📸 Reporte (PNG)
                 </button>
                 <button id="btn-actualizar" onclick="consultarAPI(true)"
-                    class="bg-[#238636] hover:bg-[#2EA043] text-white font-medium text-xs px-3 py-2 rounded transition">
+                    class="bg-[#238636] hover:bg-[#2EA043] text-white font-medium text-xs px-3 py-2 rounded transition cursor-pointer">
                     Actualizar
                 </button>
             </div>
@@ -133,11 +132,11 @@
         <div class="flex justify-end gap-2 mb-4 border-b border-[#30363D] pb-3" id="controles-csv">
             <span class="text-[10px] text-[#8B949E] self-center mr-2 font-bold uppercase">Descargar Datos Crudos:</span>
             <button onclick="descargarCSV('tc')"
-                class="text-[#8B949E] hover:text-[#E6EDF3] text-[10px] border border-[#30363D] px-2 py-1 rounded transition flex items-center gap-1">
+                class="text-[#8B949E] hover:text-[#E6EDF3] text-[10px] border border-[#30363D] px-2 py-1 rounded transition flex items-center gap-1 cursor-pointer">
                 📥 TC (.csv)
             </button>
             <button onclick="descargarCSV('ieps')"
-                class="text-[#8B949E] hover:text-[#E6EDF3] text-[10px] border border-[#30363D] px-2 py-1 rounded transition flex items-center gap-1">
+                class="text-[#8B949E] hover:text-[#E6EDF3] text-[10px] border border-[#30363D] px-2 py-1 rounded transition flex items-center gap-1 cursor-pointer">
                 📥 IEPS (.csv)
             </button>
         </div>
@@ -228,7 +227,6 @@
                         if (data.ieps[f]) {
                             document.getElementById(`val-${f}`).innerText = `$${data.ieps[f].valor.toFixed(4)}`;
 
-                            // Mostrar badge del estímulo adicional si existe
                             const badge = document.getElementById(`badge-adic-${f}`);
                             if (badge) {
                                 const valAdic = data.ieps[f].adicional || 0.0;
@@ -244,8 +242,9 @@
                 }
 
                 if (data.grafica) {
+                    const parsed = JSON.parse(data.grafica);
                     const config = { responsive: true, displayModeBar: true, displaylogo: false };
-                    Plotly.newPlot('contenedor-grafica', JSON.parse(data.grafica).data, JSON.parse(data.grafica).layout, config);
+                    Plotly.newPlot('contenedor-grafica', parsed.data, parsed.layout, config);
                 }
             } catch (e) {
                 console.error(e);
@@ -255,41 +254,132 @@
             }
         }
 
-        function generarCapturaSegura() {
-            const nodeGraf = document.getElementById('contenedor-grafica');
-            const bloqueGraf = document.getElementById('bloque-grafica');
+        function descargarReporteCanvasNativo() {
+            const nodoGrafica = document.getElementById('contenedor-grafica');
             const btnScr = document.getElementById('btn-screenshot');
 
-            btnScr.innerText = "📸 Capturando...";
+            if (!nodoGrafica || !nodoGrafica.data) {
+                alert("La gráfica aún no está lista.");
+                return;
+            }
+
+            btnScr.innerText = "📸 Generando...";
             btnScr.disabled = true;
 
-            Plotly.toImage(nodeGraf, { format: 'png', height: 700, width: 1100, scale: 2 })
-                .then(dataUrl => {
-                    const img = document.createElement('img');
-                    img.src = dataUrl;
-                    img.className = "w-full h-auto";
+            Plotly.toImage(nodoGrafica, { format: 'png', width: 1100, height: 600, scale: 2 })
+                .then(graficaUrl => {
+                    const imgGrafica = new Image();
+                    imgGrafica.crossOrigin = "anonymous";
+                    imgGrafica.onload = function () {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
 
-                    const backup = nodeGraf;
-                    bloqueGraf.innerHTML = '';
-                    bloqueGraf.appendChild(img);
+                        canvas.width = 2400;
+                        canvas.height = 1800;
 
-                    document.getElementById('controles-principales').style.visibility = 'hidden';
-                    document.getElementById('controles-csv').style.visibility = 'hidden';
+                        // Fondo general
+                        ctx.fillStyle = "#0D1117";
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                    html2canvas(document.getElementById('area-reporte'), { backgroundColor: '#0D1117', scale: 2 })
-                        .then(canvas => {
-                            const link = document.createElement('a');
-                            link.download = `Reporte_DOF_${new Date().toISOString().slice(0, 10)}.png`;
-                            link.href = canvas.toDataURL();
-                            link.click();
+                        // Encabezado
+                        ctx.fillStyle = "#F0F6FC";
+                        ctx.font = "bold 48px sans-serif";
+                        ctx.fillText("📊 DOF Monitor", 80, 100);
 
-                            bloqueGraf.innerHTML = '';
-                            bloqueGraf.appendChild(backup);
-                            document.getElementById('controles-principales').style.visibility = 'visible';
-                            document.getElementById('controles-csv').style.visibility = 'visible';
-                            btnScr.innerText = "📸 Reporte (PNG)";
-                            btnScr.disabled = false;
+                        ctx.fillStyle = "#8B949E";
+                        ctx.font = "24px sans-serif";
+                        const fechaTexto = document.getElementById('fecha-consulta').innerText;
+                        ctx.fillText(fechaTexto.toUpperCase(), 80, 145);
+
+                        ctx.strokeStyle = "#30363D";
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.moveTo(80, 185);
+                        ctx.lineTo(2320, 185);
+                        ctx.stroke();
+
+                        // Tarjetas de Métricas
+                        const tarjetas = [
+                            { titulo: "💱 TIPO DE CAMBIO", val: document.getElementById('val-tc').innerText, var: document.getElementById('var-tc').innerText },
+                            { titulo: "🛢️ REGULAR (<91 OCT)", val: document.getElementById('val-regular').innerText, var: document.getElementById('var-regular').innerText, sub: document.getElementById('vigencia-regular').innerText, adic: document.getElementById('badge-adic-regular').innerText },
+                            { titulo: "🛢️ PREMIUM", val: document.getElementById('val-premium').innerText, var: document.getElementById('var-premium').innerText, sub: document.getElementById('vigencia-premium').innerText, adic: document.getElementById('badge-adic-premium').innerText },
+                            { titulo: "🛢️ DIÉSEL", val: document.getElementById('val-diesel').innerText, var: document.getElementById('var-diesel').innerText, sub: document.getElementById('vigencia-diesel').innerText, adic: document.getElementById('badge-adic-diesel').innerText }
+                        ];
+
+                        let cardWidth = 525;
+                        let cardHeight = 240;
+                        let startX = 80;
+                        let startY = 230;
+                        let gap = 40;
+
+                        tarjetas.forEach((t, index) => {
+                            let cx = startX + (index * (cardWidth + gap));
+                            let cy = startY;
+
+                            ctx.fillStyle = "#161B22";
+                            ctx.fillRect(cx, cy, cardWidth, cardHeight);
+                            ctx.strokeStyle = "#30363D";
+                            ctx.lineWidth = 3;
+                            ctx.strokeRect(cx, cy, cardWidth, cardHeight);
+
+                            ctx.fillStyle = "#8B949E";
+                            ctx.font = "bold 20px sans-serif";
+                            ctx.fillText(t.titulo, cx + 35, cy + 50);
+
+                            if (t.sub) {
+                                ctx.fillStyle = "#8B949E";
+                                ctx.font = "18px sans-serif";
+                                ctx.fillText(t.sub, cx + 35, cy + 80);
+                            }
+
+                            // Dibujar la etiqueta de Estímulo Adicional si existe en la tarjeta
+                            if (t.adic) {
+                                let badgeX = cx + cardWidth - 230;
+                                let badgeY = cy + 32;
+                                ctx.fillStyle = "rgba(35, 134, 54, 0.2)";
+                                ctx.fillRect(badgeX, badgeY, 195, 36);
+                                ctx.strokeStyle = "rgba(35, 134, 54, 0.4)";
+                                ctx.lineWidth = 2;
+                                ctx.strokeRect(badgeX, badgeY, 195, 36);
+
+                                ctx.fillStyle = "#3FB950";
+                                ctx.font = "bold 16px monospace";
+                                ctx.fillText(t.adic, badgeX + 12, badgeY + 24);
+                            }
+
+                            ctx.fillStyle = "#F0F6FC";
+                            ctx.font = "bold 52px sans-serif";
+                            ctx.fillText(t.val, cx + 35, cy + (t.sub ? 145 : 120));
+
+                            ctx.fillStyle = t.var.includes("+") ? "#58A6FF" : (t.var.includes("-") ? "#FF7B72" : "#8B949E");
+                            ctx.font = "bold 22px monospace";
+                            ctx.fillText(t.var, cx + 35, cy + cardHeight - 35);
                         });
+
+                        let graficaY = startY + cardHeight + 50;
+
+                        ctx.fillStyle = "#161B22";
+                        ctx.fillRect(80, graficaY, 2240, 1150);
+                        ctx.strokeStyle = "#30363D";
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(80, graficaY, 2240, 1150);
+
+                        ctx.drawImage(imgGrafica, 120, graficaY + 40, 2160, 1070);
+
+                        const link = document.createElement('a');
+                        link.download = `Reporte_DOF_${new Date().toISOString().slice(0, 10)}.png`;
+                        link.href = canvas.toDataURL('image/png');
+                        link.click();
+
+                        btnScr.innerText = "📸 Reporte (PNG)";
+                        btnScr.disabled = false;
+                    };
+                    imgGrafica.src = graficaUrl;
+                })
+                .catch(err => {
+                    console.error("Error al exportar gráfica:", err);
+                    btnScr.innerText = "📸 Reporte (PNG)";
+                    btnScr.disabled = false;
                 });
         }
 
