@@ -2,6 +2,8 @@ import datetime
 import os
 import re
 import threading
+import traceback
+import unicodedata
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -23,6 +25,10 @@ app = FastAPI()
 headers = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
+
+# Notas del DOF que se parecen al acuerdo semanal de IEPS pero NO lo son
+EXCLUIR_IEPS = ("fronteriz", "guatemala", "pesquero", "agropecuario")
+KW_IEPS_RESPALDO = ("estimulos fiscales", "cuotas disminuidas", "porcentajes y los montos")
 
 # ==========================================
 # GESTIÓN DE CACHÉ
@@ -52,126 +58,146 @@ def obtener_cache():
 
 
 # ==========================================
-# SCRAPERS DE EXTRACCIÓN Y PROCESAMIENTO
+# UTILIDADES DE TEXTO
 # ==========================================
+def normalizar(texto):
+    """Minúsculas, sin acentos y con espacios colapsados."""
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = "".join(c for c in texto if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", texto).lower().strip()
+
+
 def parsear_fecha_texto(texto_fecha, anio_respaldo):
     meses = {
         "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
-        "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12
+        "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10,
+        "noviembre": 11, "diciembre": 12
     }
     try:
-        texto_fecha = texto_fecha.lower().strip()
+        texto_fecha = normalizar(texto_fecha)
         match = re.search(r"(\d{1,2})\s+de\s+([a-z]+)(?:\s+de\s+(\d{4}))?", texto_fecha)
         if match:
             dia = int(match.group(1))
             mes = meses.get(match.group(2), 1)
             anio = int(match.group(3)) if match.group(3) else int(anio_respaldo)
             return datetime.datetime(anio, mes, dia)
-    except:
+    except Exception:
         pass
     return None
+
+
+# ==========================================
+# SCRAPERS DE EXTRACCIÓN Y PROCESAMIENTO
+# ==========================================
+def _secciones(tn):
+    """Divide el acuerdo en sus bloques: porcentajes, montos, cuotas, complementarios."""
+    marcadores = {
+        "porcentajes": r"los porcentajes del estimulo fiscal para el periodo",
+        "montos": r"los montos del estimulo fiscal para el periodo",
+        "cuotas": r"las cuotas para el periodo",
+        "complementarios": r"las cantidades por litro de estimulos complementarios",
+    }
+    pos = {}
+    for nombre, patron in marcadores.items():
+        m = re.search(patron, tn)
+        if m:
+            pos[nombre] = m.start()
+    if not pos:
+        return {}
+
+    ultimo = max(pos.values())
+    fin = re.search(r"ciudad de mexico, a \d", tn[ultimo:])
+    fin_pos = ultimo + fin.start() if fin else len(tn)
+
+    ordenados = sorted(pos.items(), key=lambda x: x[1])
+    secciones = {}
+    for i, (nombre, ini) in enumerate(ordenados):
+        fin_sec = ordenados[i + 1][1] if i + 1 < len(ordenados) else fin_pos
+        secciones[nombre] = tn[ini:fin_sec]
+    return secciones
+
+
+def _valores_bloque(bloque):
+    """Devuelve {'regular','premium','diesel'} -> float o None si no se encontró."""
+    # Entre la etiqueta y la cifra se toleran hasta 80 caracteres sin dígitos
+    # (por si el DOF agrega texto como "(roja)" o notas a pie)
+    num = r"[^\d$]{0,80}?\$?\s*(\d+\.\d{4})"
+    patrones = {
+        "regular": r"menor (?:a|que) 91 octanos" + num,
+        "premium": r"(?:mayor o igual|igual o mayor|mayor) ?(?:a|que)? ?91 octanos" + num,
+        "diesel": r"diesel" + num,
+    }
+    out = {}
+    for clave, patron in patrones.items():
+        m = re.search(patron, bloque)
+        out[clave] = float(m.group(1)) if m else None
+
+    # Respaldo por posición: la tabla siempre va en orden regular, premium, diésel
+    if any(v is None for v in out.values()):
+        cifras = re.findall(r"\d+\.\d{4}", bloque)
+        if len(cifras) >= 3:
+            for clave, cifra in zip(("regular", "premium", "diesel"), cifras[:3]):
+                if out[clave] is None:
+                    out[clave] = float(cifra)
+    return out
+
+
+def parsear_ieps_html(html, fecha_str):
+    soup = BeautifulSoup(html, "html.parser")
+    # separator=" " evita que las celdas de las tablas queden pegadas
+    texto_plano = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
+    tn = normalizar(texto_plano)
+
+    # ---- Vigencia ----
+    vigencia_str = "No disponible"
+    fecha_fin_real = None
+    m = re.search(r"periodo comprendido del (.+?) al (.+?\d{4})", texto_plano, re.IGNORECASE)
+    if m:
+        texto_inicio, texto_fin = m.group(1).strip(), m.group(2).strip()
+        vigencia_str = f"del {texto_inicio} al {texto_fin}"
+        fin_dt = parsear_fecha_texto(texto_fin, fecha_str.split("/")[-1])
+        if fin_dt:
+            fecha_fin_real = fin_dt.strftime("%d/%m/%Y")
+
+    # ---- Cuotas y estímulos complementarios ----
+    sec = _secciones(tn)
+    if "cuotas" in sec:  # formato actual ("Las cuotas para el periodo...")
+        cuotas = _valores_bloque(sec["cuotas"])
+        compl = _valores_bloque(sec.get("complementarios", ""))
+    else:  # formato anterior con ARTÍCULO TERCERO / CUARTO
+        m3 = re.search(r"articulo tercero", tn) or re.search(r"articulo primero", tn)
+        m4 = re.search(r"articulo cuarto", tn)
+        cuotas = _valores_bloque(tn[m3.start(): m3.start() + 3000]) if m3 else {}
+        compl = _valores_bloque(tn[m4.start(): m4.start() + 2500]) if m4 else {}
+
+    for k in ("regular", "premium", "diesel"):
+        if cuotas.get(k) is None:
+            print(f"[IEPS {fecha_str}] No se encontró la cuota '{k}'. Bloque leído: {sec.get('cuotas', '')[:500]}")
+
+    if all(cuotas.get(k) is None for k in ("regular", "premium", "diesel")):
+        print(f"[IEPS {fecha_str}] No se pudieron leer las cuotas; secciones: {list(sec)}")
+        return None
+
+    return {
+        "fecha": fecha_str,
+        "vigencia": vigencia_str,
+        "fecha_fin_real": fecha_fin_real,
+        "regular": cuotas.get("regular") or 0.0,
+        "premium": cuotas.get("premium") or 0.0,
+        "diesel": cuotas.get("diesel") or 0.0,
+        "adic_regular": compl.get("regular") or 0.0,
+        "adic_premium": compl.get("premium") or 0.0,
+        "adic_diesel": compl.get("diesel") or 0.0,
+    }
 
 
 def extraer_ieps(url, fecha_str):
     try:
         respuesta = requests.get(url, headers=headers, verify=False, timeout=8)
-        soup = BeautifulSoup(respuesta.text, "html.parser")
-        texto = soup.get_text()
-
-        # Extraer vigencia
-        vigencia = re.search(
-            r"periodo comprendido del (.+?)\s+al\s+(.+?\d{4})", texto, re.IGNORECASE
-        )
-        
-        vigencia_str = "No disponible"
-        fecha_fin_real = None
-        
-        if vigencia:
-            texto_inicio = vigencia.group(1).strip()
-            texto_fin = vigencia.group(2).strip()
-            vigencia_str = f"del {texto_inicio} al {texto_fin}"
-            
-            anio_base = fecha_str.split("/")[-1]
-            fecha_fin_real_dt = parsear_fecha_texto(texto_fin, anio_base)
-            if fecha_fin_real_dt:
-                fecha_fin_real = fecha_fin_real_dt.strftime("%d/%m/%Y")
-
-        valores = {"regular": 0.0, "premium": 0.0, "diesel": 0.0}
-
-        # Búsqueda estricta obligatoria del Artículo Tercero (evita Artículo Segundo)
-        match_inicio = re.search(r"ARTÍCULO\s+TERCERO", texto, re.IGNORECASE)
-        if not match_inicio:
-            match_inicio = re.search(r"ARTÍCULO\s+PRIMERO", texto, re.IGNORECASE)
-
-        if match_inicio:
-            inicio = match_inicio.start()
-            bloque_base = texto[inicio : inicio + 3000]
-            
-            for linea in bloque_base.split("\n"):
-                linea_clean = linea.strip()
-                if not linea_clean:
-                    continue
-
-                if re.search(r"Gasolina\s+menor\s+a\s+91\s+octanos", linea_clean, re.I):
-                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
-                    if m: valores["regular"] = float(m.group(1))
-
-                elif re.search(r"Gasolina\s+mayor\s+o\s+igual\s+a\s+91\s+octanos", linea_clean, re.I):
-                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
-                    if m: valores["premium"] = float(m.group(1))
-
-                elif re.search(r"Diésel", linea_clean, re.I):
-                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
-                    if m: valores["diesel"] = float(m.group(1))
-
-            if valores["premium"] == 0.0 or valores["diesel"] == 0.0:
-                cifras = re.findall(r"\b\d+\.\d{4}\b", bloque_base)
-                if len(cifras) >= 3:
-                    valores["regular"] = float(cifras[0])
-                    valores["premium"] = float(cifras[1])
-                    valores["diesel"] = float(cifras[2])
-
-        # Búsqueda de Estímulo Adicional (Artículo Cuarto)
-        valores["adic_regular"] = 0.0
-        valores["adic_premium"] = 0.0
-        valores["adic_diesel"] = 0.0
-
-        idx_art4 = re.search(r"ARTÍCULO\s+CUARTO", texto, re.IGNORECASE)
-        if idx_art4:
-            bloque_art4 = texto[idx_art4.start() : idx_art4.start() + 2500]
-            
-            for linea in bloque_art4.split("\n"):
-                linea_clean = linea.strip()
-                if not linea_clean:
-                    continue
-
-                if re.search(r"Gasolina\s+menor\s+a\s+91\s+octanos", linea_clean, re.I):
-                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
-                    if m: valores["adic_regular"] = float(m.group(1))
-
-                elif re.search(r"Gasolina\s+mayor\s+o\s+igual\s+a\s+91\s+octanos", linea_clean, re.I):
-                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
-                    if m: valores["adic_premium"] = float(m.group(1))
-
-                elif re.search(r"Diésel", linea_clean, re.I):
-                    m = re.search(r"(?:\$)?\s*([\d]+\.[\d]{4})", linea_clean)
-                    if m: valores["adic_diesel"] = float(m.group(1))
-
-            if valores["adic_premium"] == 0.0 and valores["adic_diesel"] == 0.0:
-                cifras_art4 = re.findall(r"\b\d+\.\d{4}\b", bloque_art4)
-                if len(cifras_art4) >= 3:
-                    valores["adic_regular"] = float(cifras_art4[0])
-                    valores["adic_premium"] = float(cifras_art4[1])
-                    valores["adic_diesel"] = float(cifras_art4[2])
-
-        return {
-            "fecha": fecha_str,
-            "vigencia": vigencia_str,
-            "fecha_fin_real": fecha_fin_real,
-            **valores,
-        }
-    except:
-        pass
+        return parsear_ieps_html(respuesta.text, fecha_str)
+    except Exception:
+        print(f"[IEPS {fecha_str}] Error en {url}")
+        traceback.print_exc()
     return None
 
 
@@ -194,8 +220,8 @@ def extraer_tipo_cambio(url, fecha_str):
                 match.group(1) if len(match.groups()) > 0 else match.group()
             )
             return {"fecha": fecha_str, "valor": valor}
-    except:
-        pass
+    except Exception:
+        traceback.print_exc()
     return None
 
 
@@ -210,6 +236,7 @@ def buscar_dia(fecha):
 
     tipo_cambio_url = None
     ieps_url = None
+    ieps_url_respaldo = None
 
     for edicion in ["MAT", "VES"]:
         url = f"https://dof.gob.mx/index.php?year={year}&month={month}&day={day}&edicion={edicion}"
@@ -218,21 +245,29 @@ def buscar_dia(fecha):
             soup = BeautifulSoup(respuesta.text, "html.parser")
 
             for pub in soup.find_all("a"):
-                texto = pub.text.lower().strip()
+                texto = normalizar(pub.text)
                 enlace = pub.get("href", "")
-                
+
                 if not texto or not enlace or "nota_detalle.php" not in enlace:
                     continue
 
-                if enlace and not enlace.startswith("http"):
-                    enlace = f"https://dof.gob.mx/{enlace}"
+                if not enlace.startswith("http"):
+                    enlace = f"https://dof.gob.mx/{enlace.lstrip('/')}"
 
-                if "tipo de cambio" in texto and not tipo_cambio_url:
-                    tipo_cambio_url = enlace
-                elif any(kw in texto for kw in ["estímulos fiscales", "estimulos fiscales", "cuotas disminuidas", "porcentajes y los montos"]) and not ieps_url:
-                    ieps_url = enlace
-        except:
-            pass
+                if "tipo de cambio" in texto:
+                    if not tipo_cambio_url:
+                        tipo_cambio_url = enlace
+                elif any(x in texto for x in EXCLUIR_IEPS):
+                    continue  # frontera / pesquero / agropecuario
+                elif "porcentajes" in texto and "cuotas disminuidas" in texto:
+                    if not ieps_url:
+                        ieps_url = enlace
+                elif any(kw in texto for kw in KW_IEPS_RESPALDO) and not ieps_url_respaldo:
+                    ieps_url_respaldo = enlace
+        except Exception:
+            traceback.print_exc()
+
+    ieps_url = ieps_url or ieps_url_respaldo
 
     if not tipo_cambio_url and not ieps_url:
         return None
@@ -249,9 +284,9 @@ def buscar_dia(fecha):
 def calcular_variacion(lista_valores):
     if len(lista_valores) < 2:
         return {"texto": "Sin histórico", "tipo": "neutral", "valor": 0}
-    
+
     diferencia = lista_valores[-1] - lista_valores[-2]
-    
+
     if diferencia > 0:
         return {
             "texto": f"+${diferencia:.4f}",
@@ -265,6 +300,38 @@ def calcular_variacion(lista_valores):
             "valor": diferencia,
         }
     return {"texto": "Sin cambios", "tipo": "neutral", "valor": 0}
+
+
+def calcular_variacion_con_adicional(cuotas, adicionales):
+    """
+    Igual que calcular_variacion (cuota), pero si el estímulo adicional cambió
+    devuelve el efecto NETO sobre lo que paga el consumidor (cuota - adicional).
+    El texto sigue el formato numérico "+$0.5863" para que el front-end pueda
+    calcular los cpg sin problemas.
+    Un adicional menor = menos apoyo = más carga ("sube").
+    """
+    var = calcular_variacion(cuotas)
+    if len(cuotas) < 2 or len(adicionales) < 2:
+        return var
+
+    d_cuota = cuotas[-1] - cuotas[-2]
+    d_adic = adicionales[-1] - adicionales[-2]
+    var["adicional"] = {"anterior": adicionales[-2], "actual": adicionales[-1], "valor": d_adic}
+
+    if abs(d_adic) < 1e-9:  # el adicional no cambió: variación normal de cuota
+        return var
+
+    d_neto = d_cuota - d_adic
+    if abs(d_neto) < 1e-9:
+        return {"texto": "Sin cambios", "tipo": "neutral", "valor": 0, "adicional": var["adicional"]}
+
+    signo = "+" if d_neto > 0 else "-"
+    return {
+        "texto": f"{signo}${abs(d_neto):.4f}",
+        "tipo": "sube" if d_neto > 0 else "baja",
+        "valor": d_neto,
+        "adicional": var["adicional"],
+    }
 
 
 # ==========================================
@@ -287,7 +354,7 @@ def generar_grafica_json(datos):
         try:
             f_date = datetime.datetime.strptime(f, "%d/%m/%Y")
             puntos_tc.append((f_date, v))
-        except:
+        except Exception:
             continue
     puntos_tc.sort(key=lambda x: x[0])
 
@@ -300,15 +367,15 @@ def generar_grafica_json(datos):
             f_date = datetime.datetime.strptime(f, "%d/%m/%Y")
             if f_date.weekday() == 4:
                 f_date = f_date + datetime.timedelta(days=1)
-            
+
             val_r = -ad_reg if reg == 0.0 and ad_reg > 0 else reg
             val_p = -ad_prem if prem == 0.0 and ad_prem > 0 else prem
             val_d = -ad_dies if dies == 0.0 and ad_dies > 0 else dies
 
             puntos_ieps.append((f_date, f_fin, val_r, val_p, val_d))
-        except:
+        except Exception:
             continue
-            
+
     puntos_ieps.sort(key=lambda x: x[0])
 
     if puntos_ieps and puntos_ieps[-1][1]:
@@ -317,7 +384,7 @@ def generar_grafica_json(datos):
             dt_fin_real = datetime.datetime.strptime(ff_str, "%d/%m/%Y")
             ult_m, ult_p, ult_d = puntos_ieps[-1][2], puntos_ieps[-1][3], puntos_ieps[-1][4]
             puntos_ieps.append((dt_fin_real, ff_str, ult_m, ult_p, ult_d))
-        except:
+        except Exception:
             pass
 
     if not puntos_tc and not puntos_ieps:
@@ -333,7 +400,7 @@ def generar_grafica_json(datos):
     if puntos_tc:
         fx_tc = [p[0].strftime("%Y-%m-%d") for p in puntos_tc]
         vy_tc = [p[1] for p in puntos_tc]
-        
+
         fig.add_trace(
             gr.Scatter(
                 x=fx_tc, y=vy_tc,
@@ -352,33 +419,33 @@ def generar_grafica_json(datos):
         vy_regular = [p[2] for p in puntos_ieps]
         vy_premium = [p[3] for p in puntos_ieps]
         vy_diesel = [p[4] for p in puntos_ieps]
-        
+
         fig.add_trace(
             gr.Scatter(
-                x=fx_ieps, y=vy_regular, 
-                mode='lines+markers', 
-                name='Regular (<91 oct)', 
-                line=dict(color='#3FB950', width=2.5, shape='hv'), 
+                x=fx_ieps, y=vy_regular,
+                mode='lines+markers',
+                name='Regular (<91 oct)',
+                line=dict(color='#3FB950', width=2.5, shape='hv'),
                 marker=dict(size=6)
             ),
             row=2, col=1
         )
         fig.add_trace(
             gr.Scatter(
-                x=fx_ieps, y=vy_premium, 
-                mode='lines+markers', 
-                name='Premium (≥91 oct)', 
-                line=dict(color='#FF7B72', width=2.5, shape='hv'), 
+                x=fx_ieps, y=vy_premium,
+                mode='lines+markers',
+                name='Premium (≥91 oct)',
+                line=dict(color='#FF7B72', width=2.5, shape='hv'),
                 marker=dict(size=6)
             ),
             row=2, col=1
         )
         fig.add_trace(
             gr.Scatter(
-                x=fx_ieps, y=vy_diesel, 
-                mode='lines+markers', 
-                name='Diésel', 
-                line=dict(color='#FFFFFF', width=2.5, shape='hv'), 
+                x=fx_ieps, y=vy_diesel,
+                mode='lines+markers',
+                name='Diésel',
+                line=dict(color='#FFFFFF', width=2.5, shape='hv'),
                 marker=dict(size=6)
             ),
             row=2, col=1
@@ -408,11 +475,11 @@ def generar_grafica_json(datos):
         min_val = min(valores)
         max_val = max(valores)
         margen = max((max_val - min_val) * 0.05, 0.005)
-        
+
         fig.update_yaxes(
             title_text="Pesos por dólar",
             row=1, col=1,
-            autorange=False, 
+            autorange=False,
             range=[min_val - margen, max_val + margen],
             showgrid=True,
             gridcolor='rgba(139, 148, 158, 0.08)',
@@ -428,7 +495,7 @@ def generar_grafica_json(datos):
         min_ieps = min(todos_ieps)
         max_ieps = max(todos_ieps)
         margen_ieps = max(abs(max_ieps - min_ieps) * 0.05, 0.05)
-        
+
         fig.update_yaxes(
             title_text="Pesos por litro",
             row=2, col=1,
@@ -444,11 +511,11 @@ def generar_grafica_json(datos):
             linecolor="#30363D",
             tickformat=".4f"
         )
-        
+
         fig.add_hline(
-            y=0, 
-            line_dash="dot", 
-            line_color="rgba(139, 148, 158, 0.25)", 
+            y=0,
+            line_dash="dot",
+            line_color="rgba(139, 148, 158, 0.25)",
             line_width=1.5,
             row=2, col=1
         )
@@ -462,9 +529,9 @@ def generar_grafica_json(datos):
 def run_scraper():
     hoy = datetime.datetime.now()
     resultados_dias = []
-    
+
     dias_a_revisar = [hoy - datetime.timedelta(days=i) for i in range(38)]
-    
+
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(buscar_dia, fecha): fecha for fecha in dias_a_revisar}
         for future in as_completed(futures):
@@ -473,11 +540,11 @@ def run_scraper():
                 if resultado and (resultado.get("tc") or resultado.get("ieps")):
                     resultados_dias.append(resultado)
             except Exception:
-                pass
+                traceback.print_exc()
 
     try:
         resultados_dias.sort(key=lambda x: datetime.datetime.strptime(x["fecha"], "%d/%m/%Y"))
-    except:
+    except Exception:
         pass
 
     fechas_tc, valores_tc = [], []
@@ -493,19 +560,19 @@ def run_scraper():
             fechas_tc.append(dia["tc"]["fecha"])
             valores_tc.append(dia["tc"]["valor"])
             ultima_fecha_tc = dia["tc"]["fecha"]
-            
+
         if dia.get("ieps") and dia["ieps"].get("regular") is not None:
             fechas_ieps.append(dia["ieps"]["fecha"])
             fechas_fin_ieps.append(dia["ieps"].get("fecha_fin_real"))
-            
+
             vals_regular.append(dia["ieps"].get("regular", 0.0))
             vals_premium.append(dia["ieps"].get("premium", 0.0))
             vals_diesel.append(dia["ieps"].get("diesel", 0.0))
-            
+
             vals_adic_regular.append(dia["ieps"].get("adic_regular", 0.0))
             vals_adic_premium.append(dia["ieps"].get("adic_premium", 0.0))
             vals_adic_diesel.append(dia["ieps"].get("adic_diesel", 0.0))
-            
+
             vigencias_texto.append(dia["ieps"].get("vigencia", "No disponible"))
             ultima_vigencia = dia["ieps"].get("vigencia", "No disponible")
 
@@ -565,17 +632,17 @@ def construir_respuesta(datos, desde_cache=False):
             "regular": {
                 "valor": datos["vals_regular"][-1],
                 "adicional": datos.get("vals_adic_regular", [0.0])[-1] if datos.get("vals_adic_regular") else 0.0,
-                "variacion": calcular_variacion(datos["vals_regular"]),
+                "variacion": calcular_variacion_con_adicional(datos["vals_regular"], datos.get("vals_adic_regular", [])),
             },
             "premium": {
                 "valor": datos["vals_premium"][-1],
                 "adicional": datos.get("vals_adic_premium", [0.0])[-1] if datos.get("vals_adic_premium") else 0.0,
-                "variacion": calcular_variacion(datos["vals_premium"]),
+                "variacion": calcular_variacion_con_adicional(datos["vals_premium"], datos.get("vals_adic_premium", [])),
             },
             "diesel": {
                 "valor": datos["vals_diesel"][-1],
                 "adicional": datos.get("vals_adic_diesel", [0.0])[-1] if datos.get("vals_adic_diesel") else 0.0,
-                "variacion": calcular_variacion(datos["vals_diesel"]),
+                "variacion": calcular_variacion_con_adicional(datos["vals_diesel"], datos.get("vals_adic_diesel", [])),
             },
         }
 
@@ -604,3 +671,14 @@ async def consultar(force: bool = False):
     datos = await run_in_threadpool(run_scraper)
     resultado = await run_in_threadpool(construir_respuesta, datos, False)
     return JSONResponse(content=resultado)
+
+
+# ==========================================
+# PRUEBA RÁPIDA (python dof_monitor.py)
+# ==========================================
+if __name__ == "__main__":
+    prueba = extraer_ieps(
+        "https://dof.gob.mx/nota_detalle.php?codigo=5799679&fecha=25/09/2026",
+        "25/09/2026",
+    )
+    print(prueba)
