@@ -20,25 +20,17 @@
             border-radius: 6px;
         }
 
-        .badge-sube {
-            color: #58A6FF;
-        }
-
-        .badge-baja {
-            color: #FF7B72;
-        }
-
-        .badge-neutral {
-            color: #8B949E;
-        }
-
-        /* Combustibles: se colorea por impacto al consumidor, no por dirección del número */
+        /* Colores unificados: Rojo para impacto negativo (sube costo/impuesto), Verde para positivo */
         .badge-malo {
             color: #FF7B72;
         }
 
         .badge-bueno {
             color: #3FB950;
+        }
+
+        .badge-neutral {
+            color: #8B949E;
         }
     </style>
 </head>
@@ -163,8 +155,8 @@
     <script>
         let cacheLocalRaw = null;
 
-        // Ajuste: Se agrega el parámetro esCombustible para invertir la lógica de colores
-        function mapearEstiloVariacion(elementoId, variacion, esCombustible = false) {
+        // Lógica unificada: Sube = Malo (Rojo), Baja = Bueno (Verde)
+        function mapearEstiloVariacion(elementoId, variacion) {
             const el = document.getElementById(elementoId);
             if (!variacion) {
                 el.className = "text-xs font-mono mt-2 badge-neutral";
@@ -175,11 +167,9 @@
 
             let clase = "badge-neutral";
             if (variacion.tipo === "sube") {
-                // Si es combustible, que suba el impuesto es malo (rojo). Si es TC, es azul.
-                clase = esCombustible ? "badge-malo" : "badge-sube";
+                clase = "badge-malo"; // Rojo
             } else if (variacion.tipo === "baja") {
-                // Si es combustible, que baje el impuesto es bueno (verde). Si es TC, es rojo.
-                clase = esCombustible ? "badge-bueno" : "badge-baja";
+                clase = "badge-bueno"; // Verde
             }
             el.className = `text-xs font-mono mt-2 ${clase}`;
         }
@@ -225,8 +215,8 @@
                 if (data.tipo_cambio) {
                     tcActual = data.tipo_cambio.valor;
                     document.getElementById('val-tc').innerText = `$${tcActual.toFixed(4)}`;
-                    // El tipo de cambio se llama sin el flag de combustible (esCombustible = false por defecto)
-                    mapearEstiloVariacion('var-tc', data.tipo_cambio.variacion, false);
+                    // Ahora el tipo de cambio usa la misma lógica de colores
+                    mapearEstiloVariacion('var-tc', data.tipo_cambio.variacion);
                 }
 
                 if (data.ieps) {
@@ -248,8 +238,7 @@
                                 badge.classList.remove('hidden');
                             }
 
-                            // Aquí se envía 'true' para indicar que es un combustible y use la lógica de colores correcta
-                            mapearEstiloVariacion(`var-${f}`, data.ieps[f].variacion, true);
+                            mapearEstiloVariacion(`var-${f}`, data.ieps[f].variacion);
                             calcularEInyectarCPG(`cpg-${f}`, data.ieps[f].valor, tcActual);
                             calcularVariacionCPG(`var-${f}`, data.ieps[f].variacion, tcActual);
                         }
@@ -281,7 +270,6 @@
             btnScr.innerText = "📸 Generando...";
             btnScr.disabled = true;
 
-            // Toma el color real que tiene cada variación en pantalla (rojo/verde/azul/gris)
             const colorDe = (id) => getComputedStyle(document.getElementById(id)).color;
 
             Plotly.toImage(nodoGrafica, { format: 'png', width: 1100, height: 600, scale: 2 })
@@ -295,11 +283,9 @@
                         canvas.width = 2400;
                         canvas.height = 1800;
 
-                        // Fondo general
                         ctx.fillStyle = "#0D1117";
                         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                        // Encabezado
                         ctx.fillStyle = "#F0F6FC";
                         ctx.font = "bold 48px sans-serif";
                         ctx.fillText("📊 DOF Monitor", 80, 100);
@@ -316,7 +302,6 @@
                         ctx.lineTo(2320, 185);
                         ctx.stroke();
 
-                        // Tarjetas de Métricas (Se captura el color real desde el CSS)
                         const tarjetas = [
                             { titulo: "💱 TIPO DE CAMBIO", val: document.getElementById('val-tc').innerText, var: document.getElementById('var-tc').innerText, colorVar: colorDe('var-tc') },
                             { titulo: "🛢️ REGULAR (<91 OCT)", val: document.getElementById('val-regular').innerText, var: document.getElementById('var-regular').innerText, colorVar: colorDe('var-regular'), sub: document.getElementById('vigencia-regular').innerText, adic: document.getElementById('badge-adic-regular').innerText },
@@ -350,7 +335,6 @@
                                 ctx.fillText(t.sub, cx + 35, cy + 80);
                             }
 
-                            // Dibujar la etiqueta de Estímulo Adicional si existe en la tarjeta
                             if (t.adic) {
                                 let badgeX = cx + cardWidth - 230;
                                 let badgeY = cy + 32;
@@ -369,7 +353,6 @@
                             ctx.font = "bold 52px sans-serif";
                             ctx.fillText(t.val, cx + 35, cy + (t.sub ? 145 : 120));
 
-                            // Usar el color real que tiene en pantalla
                             ctx.fillStyle = t.colorVar;
                             ctx.font = "bold 22px monospace";
                             ctx.fillText(t.var, cx + 35, cy + cardHeight - 35);
