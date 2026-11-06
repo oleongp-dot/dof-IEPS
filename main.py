@@ -596,6 +596,12 @@ def run_scraper():
     return datos
 
 
+def obtener_valor_neto(cuota, adicional):
+    """Si la cuota es 0, el valor neto es el adicional en negativo."""
+    if cuota == 0.0 and adicional > 0.0:
+        return -adicional
+    return cuota
+
 def construir_respuesta(datos, desde_cache=False):
     grafica_json = generar_grafica_json(datos)
 
@@ -627,22 +633,43 @@ def construir_respuesta(datos, desde_cache=False):
         }
 
     if datos["vals_regular"]:
+        # Obtenemos los últimos valores de cuotas y adicionales
+        reg_cuota = datos["vals_regular"][-1]
+        reg_adic = datos.get("vals_adic_regular", [0.0])[-1] if datos.get("vals_adic_regular") else 0.0
+        
+        prem_cuota = datos["vals_premium"][-1]
+        prem_adic = datos.get("vals_adic_premium", [0.0])[-1] if datos.get("vals_adic_premium") else 0.0
+        
+        dies_cuota = datos["vals_diesel"][-1]
+        dies_adic = datos.get("vals_adic_diesel", [0.0])[-1] if datos.get("vals_adic_diesel") else 0.0
+
+        # Calculamos los valores netos para mostrar en pantalla
+        val_reg_neto = obtener_valor_neto(reg_cuota, reg_adic)
+        val_prem_neto = obtener_valor_neto(prem_cuota, prem_adic)
+        val_dies_neto = obtener_valor_neto(dies_cuota, dies_adic)
+
+        # Calculamos las variaciones usando los valores netos para que los cpg coincidan
+        # Creamos listas temporales con los valores netos históricos
+        hist_reg_neto = [obtener_valor_neto(c, a) for c, a in zip(datos["vals_regular"], datos.get("vals_adic_regular", [0]*len(datos["vals_regular"])))]
+        hist_prem_neto = [obtener_valor_neto(c, a) for c, a in zip(datos["vals_premium"], datos.get("vals_adic_premium", [0]*len(datos["vals_premium"])))]
+        hist_dies_neto = [obtener_valor_neto(c, a) for c, a in zip(datos["vals_diesel"], datos.get("vals_adic_diesel", [0]*len(datos["vals_diesel"])))]
+
         resultado["ieps"] = {
             "vigencia": datos["ultima_vigencia"],
             "regular": {
-                "valor": datos["vals_regular"][-1],
-                "adicional": datos.get("vals_adic_regular", [0.0])[-1] if datos.get("vals_adic_regular") else 0.0,
-                "variacion": calcular_variacion_con_adicional(datos["vals_regular"], datos.get("vals_adic_regular", [])),
+                "valor": val_reg_neto,
+                "adicional": reg_adic, # Mantenemos el adicional original por si se necesita
+                "variacion": calcular_variacion(hist_reg_neto), # Variación basada en el valor neto
             },
             "premium": {
-                "valor": datos["vals_premium"][-1],
-                "adicional": datos.get("vals_adic_premium", [0.0])[-1] if datos.get("vals_adic_premium") else 0.0,
-                "variacion": calcular_variacion_con_adicional(datos["vals_premium"], datos.get("vals_adic_premium", [])),
+                "valor": val_prem_neto,
+                "adicional": prem_adic,
+                "variacion": calcular_variacion(hist_prem_neto),
             },
             "diesel": {
-                "valor": datos["vals_diesel"][-1],
-                "adicional": datos.get("vals_adic_diesel", [0.0])[-1] if datos.get("vals_adic_diesel") else 0.0,
-                "variacion": calcular_variacion_con_adicional(datos["vals_diesel"], datos.get("vals_adic_diesel", [])),
+                "valor": val_dies_neto,
+                "adicional": dies_adic,
+                "variacion": calcular_variacion(hist_dies_neto),
             },
         }
 
