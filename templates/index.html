@@ -31,6 +31,15 @@
         .badge-neutral {
             color: #8B949E;
         }
+
+        /* Combustibles: se colorea por impacto al consumidor, no por dirección del número */
+        .badge-malo {
+            color: #FF7B72;
+        }
+
+        .badge-bueno {
+            color: #3FB950;
+        }
     </style>
 </head>
 
@@ -154,7 +163,8 @@
     <script>
         let cacheLocalRaw = null;
 
-        function mapearEstiloVariacion(elementoId, variacion) {
+        // Ajuste: Se agrega el parámetro esCombustible para invertir la lógica de colores
+        function mapearEstiloVariacion(elementoId, variacion, esCombustible = false) {
             const el = document.getElementById(elementoId);
             if (!variacion) {
                 el.className = "text-xs font-mono mt-2 badge-neutral";
@@ -162,13 +172,16 @@
                 return;
             }
             el.innerText = variacion.texto;
+
+            let clase = "badge-neutral";
             if (variacion.tipo === "sube") {
-                el.className = "text-xs font-mono mt-2 badge-sube";
+                // Si es combustible, que suba el impuesto es malo (rojo). Si es TC, es azul.
+                clase = esCombustible ? "badge-malo" : "badge-sube";
             } else if (variacion.tipo === "baja") {
-                el.className = "text-xs font-mono mt-2 badge-baja";
-            } else {
-                el.className = "text-xs font-mono mt-2 badge-neutral";
+                // Si es combustible, que baje el impuesto es bueno (verde). Si es TC, es rojo.
+                clase = esCombustible ? "badge-bueno" : "badge-baja";
             }
+            el.className = `text-xs font-mono mt-2 ${clase}`;
         }
 
         function calcularEInyectarCPG(elementoId, valorMxnLitro, tipoCambio) {
@@ -212,7 +225,8 @@
                 if (data.tipo_cambio) {
                     tcActual = data.tipo_cambio.valor;
                     document.getElementById('val-tc').innerText = `$${tcActual.toFixed(4)}`;
-                    mapearEstiloVariacion('var-tc', data.tipo_cambio.variacion);
+                    // El tipo de cambio se llama sin el flag de combustible (esCombustible = false por defecto)
+                    mapearEstiloVariacion('var-tc', data.tipo_cambio.variacion, false);
                 }
 
                 if (data.ieps) {
@@ -234,7 +248,8 @@
                                 badge.classList.remove('hidden');
                             }
 
-                            mapearEstiloVariacion(`var-${f}`, data.ieps[f].variacion);
+                            // Aquí se envía 'true' para indicar que es un combustible y use la lógica de colores correcta
+                            mapearEstiloVariacion(`var-${f}`, data.ieps[f].variacion, true);
                             calcularEInyectarCPG(`cpg-${f}`, data.ieps[f].valor, tcActual);
                             calcularVariacionCPG(`var-${f}`, data.ieps[f].variacion, tcActual);
                         }
@@ -265,6 +280,9 @@
 
             btnScr.innerText = "📸 Generando...";
             btnScr.disabled = true;
+
+            // Toma el color real que tiene cada variación en pantalla (rojo/verde/azul/gris)
+            const colorDe = (id) => getComputedStyle(document.getElementById(id)).color;
 
             Plotly.toImage(nodoGrafica, { format: 'png', width: 1100, height: 600, scale: 2 })
                 .then(graficaUrl => {
@@ -298,12 +316,12 @@
                         ctx.lineTo(2320, 185);
                         ctx.stroke();
 
-                        // Tarjetas de Métricas
+                        // Tarjetas de Métricas (Se captura el color real desde el CSS)
                         const tarjetas = [
-                            { titulo: "💱 TIPO DE CAMBIO", val: document.getElementById('val-tc').innerText, var: document.getElementById('var-tc').innerText },
-                            { titulo: "🛢️ REGULAR (<91 OCT)", val: document.getElementById('val-regular').innerText, var: document.getElementById('var-regular').innerText, sub: document.getElementById('vigencia-regular').innerText, adic: document.getElementById('badge-adic-regular').innerText },
-                            { titulo: "🛢️ PREMIUM", val: document.getElementById('val-premium').innerText, var: document.getElementById('var-premium').innerText, sub: document.getElementById('vigencia-premium').innerText, adic: document.getElementById('badge-adic-premium').innerText },
-                            { titulo: "🛢️ DIÉSEL", val: document.getElementById('val-diesel').innerText, var: document.getElementById('var-diesel').innerText, sub: document.getElementById('vigencia-diesel').innerText, adic: document.getElementById('badge-adic-diesel').innerText }
+                            { titulo: "💱 TIPO DE CAMBIO", val: document.getElementById('val-tc').innerText, var: document.getElementById('var-tc').innerText, colorVar: colorDe('var-tc') },
+                            { titulo: "🛢️ REGULAR (<91 OCT)", val: document.getElementById('val-regular').innerText, var: document.getElementById('var-regular').innerText, colorVar: colorDe('var-regular'), sub: document.getElementById('vigencia-regular').innerText, adic: document.getElementById('badge-adic-regular').innerText },
+                            { titulo: "🛢️ PREMIUM", val: document.getElementById('val-premium').innerText, var: document.getElementById('var-premium').innerText, colorVar: colorDe('var-premium'), sub: document.getElementById('vigencia-premium').innerText, adic: document.getElementById('badge-adic-premium').innerText },
+                            { titulo: "🛢️ DIÉSEL", val: document.getElementById('val-diesel').innerText, var: document.getElementById('var-diesel').innerText, colorVar: colorDe('var-diesel'), sub: document.getElementById('vigencia-diesel').innerText, adic: document.getElementById('badge-adic-diesel').innerText }
                         ];
 
                         let cardWidth = 525;
@@ -351,7 +369,8 @@
                             ctx.font = "bold 52px sans-serif";
                             ctx.fillText(t.val, cx + 35, cy + (t.sub ? 145 : 120));
 
-                            ctx.fillStyle = t.var.includes("+") ? "#58A6FF" : (t.var.includes("-") ? "#FF7B72" : "#8B949E");
+                            // Usar el color real que tiene en pantalla
+                            ctx.fillStyle = t.colorVar;
                             ctx.font = "bold 22px monospace";
                             ctx.fillText(t.var, cx + 35, cy + cardHeight - 35);
                         });
